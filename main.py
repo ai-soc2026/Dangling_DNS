@@ -1,18 +1,21 @@
+from __future__ import annotations
+
 import asyncio
+import contextlib
 import json
 import os
 import re
 import shutil
+import signal
 import socket
-import subprocess
 import time
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Optional
 
 import dns.resolver
 import httpx
 import openpyxl
 from openai import OpenAI
-from fastapi import FastAPI, File, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
@@ -196,7 +199,11 @@ def rule_based_analysis(domain: str, dns_info: dict, http_info: dict) -> dict:
 
 
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5.2")
-ENUM_TIMEOUT_SECONDS = int(os.getenv("ENUM_TIMEOUT_SECONDS", "120"))
+# Zero means no application-level deadline: passive tools run until they finish.
+# Set ENUM_TIMEOUT_SECONDS to a positive value when a deployment needs a cap.
+ENUM_TIMEOUT_SECONDS = int(os.getenv("ENUM_TIMEOUT_SECONDS", "0"))
+CERTSPOTTER_MAX_PAGES = int(os.getenv("CERTSPOTTER_MAX_PAGES", "2"))
+MAX_DISCOVERED_DOMAINS = int(os.getenv("MAX_DISCOVERED_DOMAINS", "1000"))
 
 
 def openai_available() -> bool:
@@ -212,24 +219,163 @@ def normalize_domain(value: str) -> str | None:
     return None
 
 
-async def run_command_lines(cmd: list[str], timeout: int = ENUM_TIMEOUT_SECONDS) -> list[str]:
+async def run_command_lines(
+    cmd: list[str],
+    timeout: int = ENUM_TIMEOUT_SECONDS,
+    on_line=None,
+) -> list[str]:
     if not shutil.which(cmd[0]):
         return []
 
-    def _run() -> list[str]:
-        try:
-            proc = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-                check=False,
-            )
-        except (subprocess.SubprocessError, OSError):
-            return []
-        return proc.stdout.splitlines()
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+            start_new_session=True,
+        )
+    except OSError:
+        return []
 
-    return await asyncio.to_thread(_run)
+    lines = []
+
+    async def read_stdout() -> None:
+        while True:
+            line = await proc.stdout.readline()
+            if not line:
+                break
+            decoded = line.decode(errors="replace").strip()
+            lines.append(decoded)
+            if on_line is not None:
+                await on_line(decoded)
+
+    reader_task = asyncio.create_task(read_stdout())
+    cancelled = False
+
+    def kill_process_group() -> None:
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except (OSError, ProcessLookupError):
+            with contextlib.suppress(ProcessLookupError):
+                proc.kill()
+
+    try:
+        if timeout > 0:
+            await asyncio.wait_for(proc.wait(), timeout=timeout)
+        else:
+            await proc.wait()
+    except asyncio.TimeoutError:
+        kill_process_group()
+        with contextlib.suppress(asyncio.TimeoutError):
+            await asyncio.wait_for(proc.wait(), timeout=2)
+    except asyncio.CancelledError:
+        cancelled = True
+        kill_process_group()
+        with contextlib.suppress(asyncio.TimeoutError):
+            await asyncio.wait_for(proc.wait(), timeout=2)
+    finally:
+        try:
+            await asyncio.wait_for(reader_task, timeout=2)
+        except asyncio.TimeoutError:
+            reader_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await reader_task
+
+    if cancelled:
+        raise asyncio.CancelledError
+
+    return lines
+
+
+async def enumerate_certspotter(domain: str) -> list[str]:
+    """Discover certificate-backed DNS names without requiring local CLI tools."""
+    discovered = set()
+    after = None
+
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            for _ in range(CERTSPOTTER_MAX_PAGES):
+                params = {
+                    "domain": domain,
+                    "include_subdomains": "true",
+                    "expand": "dns_names",
+                }
+                if after is not None:
+                    params["after"] = after
+
+                response = await client.get(
+                    "https://api.certspotter.com/v1/issuances",
+                    params=params,
+                    headers={"User-Agent": "DangleScan/1.0"},
+                )
+                response.raise_for_status()
+                issuances = response.json()
+                if not issuances:
+                    break
+
+                for issuance in issuances:
+                    for name in issuance.get("dns_names", []):
+                        normalized = normalize_domain(name.removeprefix("*."))
+                        if normalized and (
+                            normalized == domain or normalized.endswith(f".{domain}")
+                        ):
+                            discovered.add(normalized)
+
+                after = issuances[-1].get("id")
+                if after is None or len(discovered) >= MAX_DISCOVERED_DOMAINS:
+                    break
+    except (httpx.HTTPError, ValueError, TypeError):
+        return []
+
+    return sorted(discovered)[:MAX_DISCOVERED_DOMAINS]
+
+
+async def enumerate_hackertarget(domain: str) -> list[str]:
+    """Use HackerTarget's host-search feed as a no-key passive fallback."""
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            response = await client.get(
+                "https://api.hackertarget.com/hostsearch/",
+                params={"q": domain},
+                headers={"User-Agent": "DangleScan/1.0"},
+            )
+            response.raise_for_status()
+    except httpx.HTTPError:
+        return []
+
+    discovered = set()
+    for line in response.text.splitlines():
+        hostname = line.partition(",")[0]
+        normalized = normalize_domain(hostname)
+        if normalized and (
+            normalized == domain or normalized.endswith(f".{domain}")
+        ):
+            discovered.add(normalized)
+    return sorted(discovered)
+
+
+async def enumerate_urlscan(domain: str) -> list[str]:
+    """Collect hostnames observed by URLScan as another passive source."""
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            response = await client.get(
+                "https://urlscan.io/api/v1/search/",
+                params={"q": f"domain:{domain}", "size": "10000"},
+                headers={"User-Agent": "DangleScan/1.0"},
+            )
+            response.raise_for_status()
+            results = response.json().get("results", [])
+    except (httpx.HTTPError, ValueError, TypeError, AttributeError):
+        return []
+
+    discovered = set()
+    for result in results:
+        normalized = normalize_domain(result.get("page", {}).get("domain", ""))
+        if normalized and (
+            normalized == domain or normalized.endswith(f".{domain}")
+        ):
+            discovered.add(normalized)
+    return sorted(discovered)
 
 
 async def enumerate_subdomains(domain: str) -> list[str]:
@@ -237,14 +383,36 @@ async def enumerate_subdomains(domain: str) -> list[str]:
         ["subfinder", "-silent", "-d", domain],
         ["amass", "enum", "-passive", "-d", domain],
     ]
-    results = await asyncio.gather(*(run_command_lines(cmd) for cmd in commands))
+    async def certspotter_with_timeout() -> list[str]:
+        if ENUM_TIMEOUT_SECONDS <= 0:
+            return await enumerate_certspotter(domain)
+        try:
+            return await asyncio.wait_for(enumerate_certspotter(domain), timeout=ENUM_TIMEOUT_SECONDS)
+        except asyncio.TimeoutError:
+            return []
+
+    tasks = [
+        asyncio.create_task(certspotter_with_timeout()),
+        asyncio.create_task(enumerate_hackertarget(domain)),
+        asyncio.create_task(enumerate_urlscan(domain)),
+        *(asyncio.create_task(run_command_lines(cmd)) for cmd in commands),
+    ]
+    wait_timeout = ENUM_TIMEOUT_SECONDS + 3 if ENUM_TIMEOUT_SECONDS > 0 else None
+    done, pending = await asyncio.wait(tasks, timeout=wait_timeout)
+    for task in pending:
+        task.cancel()
+
+    results = []
+    for task in done:
+        if not task.cancelled() and task.exception() is None:
+            results.append(task.result())
     discovered = set()
     for lines in results:
         for line in lines:
             normalized = normalize_domain(line)
             if normalized and (normalized == domain or normalized.endswith(f".{domain}")):
                 discovered.add(normalized)
-    return sorted(discovered)
+    return sorted(discovered)[:MAX_DISCOVERED_DOMAINS]
 
 
 async def expand_domains(domains: list[str], use_enum: bool) -> list[str]:
@@ -301,7 +469,7 @@ async def scan_domain(domain: str, use_ai: bool = True) -> dict:
     start = time.time()
 
     # DNS resolution
-    dns_info = resolve_dns(domain)
+    dns_info = await asyncio.to_thread(resolve_dns, domain)
 
     # HTTP fetch (skip if NXDOMAIN)
     http_info = {"status": None, "title": None, "body_snippet": "", "error": "Skipped"}
@@ -343,41 +511,194 @@ async def scan_domain(domain: str, use_ai: bool = True) -> dict:
 async def stream_scan(domains: list[str], use_ai: bool, use_enum: bool) -> AsyncGenerator[str, None]:
     input_total = len(domains)
     yield f"data: {json.dumps({'type': 'enumerating', 'total': input_total, 'enabled': use_enum})}\n\n"
-    domains = await expand_domains(domains, use_enum)
-    total = len(domains)
-    yield f"data: {json.dumps({'type': 'start', 'total': total, 'input_total': input_total})}\n\n"
-
     semaphore = asyncio.Semaphore(10)  # max 10 concurrent scans
 
-    async def scan_with_sem(domain, idx):
+    async def scan_with_sem(domain):
         async with semaphore:
-            result = await scan_domain(domain, use_ai)
-            return idx, result
+            return await scan_domain(domain, use_ai)
 
-    tasks = [scan_with_sem(d, i) for i, d in enumerate(domains)]
+    normalized = sorted({d for d in (normalize_domain(domain) for domain in domains) if d})
+
+    if not use_enum:
+        total = len(normalized)
+        yield f"data: {json.dumps({'type': 'start', 'total': total, 'input_total': input_total, 'discovered': 0, 'enumerating': False})}\n\n"
+        tasks = [asyncio.create_task(scan_with_sem(domain)) for domain in normalized]
+        completed = 0
+        try:
+            for task in asyncio.as_completed(tasks):
+                result = await task
+                completed += 1
+                payload = {
+                    "type": "result",
+                    "completed": completed,
+                    "total": total,
+                    "input_total": input_total,
+                    "enumerating": False,
+                    "result": result,
+                }
+                yield f"data: {json.dumps(payload)}\n\n"
+            yield f"data: {json.dumps({'type': 'done', 'total': total, 'completed': completed, 'discovered': 0, 'enumeration_enabled': False})}\n\n"
+        finally:
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+        return
+
+    discovery_queue = asyncio.Queue()
+
+    async def produce(source, root_domain: str) -> None:
+        try:
+            names = await source
+            for name in names:
+                normalized_name = normalize_domain(name)
+                if normalized_name and (
+                    normalized_name == root_domain
+                    or normalized_name.endswith(f".{root_domain}")
+                ):
+                    await discovery_queue.put(("domain", normalized_name))
+        except Exception:
+            pass
+        finally:
+            await discovery_queue.put(("done", None))
+
+    async def produce_command(cmd: list[str], root_domain: str) -> None:
+        async def emit(line: str) -> None:
+            normalized_name = normalize_domain(line)
+            if normalized_name and (
+                normalized_name == root_domain
+                or normalized_name.endswith(f".{root_domain}")
+            ):
+                await discovery_queue.put(("domain", normalized_name))
+
+        try:
+            await run_command_lines(cmd, on_line=emit)
+        except Exception:
+            pass
+        finally:
+            await discovery_queue.put(("done", None))
+
+    producers = []
+    for root_domain in normalized:
+        sources = [
+            enumerate_certspotter(root_domain),
+            enumerate_hackertarget(root_domain),
+            enumerate_urlscan(root_domain),
+        ]
+        producers.extend(
+            asyncio.create_task(produce(source, root_domain)) for source in sources
+        )
+        producers.extend([
+            asyncio.create_task(produce_command(
+                ["subfinder", "-silent", "-d", root_domain], root_domain
+            )),
+            asyncio.create_task(produce_command(
+                ["amass", "enum", "-passive", "-d", root_domain], root_domain
+            )),
+        ])
+
+    active_producers = len(producers)
+    seen = set()
+    scan_tasks = set()
+
+    def schedule_domain(domain: str) -> None:
+        if domain in seen or len(seen) >= MAX_DISCOVERED_DOMAINS:
+            return
+        seen.add(domain)
+        scan_tasks.add(asyncio.create_task(scan_with_sem(domain)))
+
+    for domain in normalized:
+        schedule_domain(domain)
+
+    yield f"data: {json.dumps({'type': 'start', 'total': len(seen), 'input_total': input_total, 'discovered': 0, 'enumerating': True})}\n\n"
+
     completed = 0
+    queue_task = asyncio.create_task(discovery_queue.get())
 
-    for coro in asyncio.as_completed(tasks):
-        idx, result = await coro
-        completed += 1
-        payload = {
-            "type": "result",
-            "completed": completed,
-            "total": total,
-            "result": result,
-        }
-        yield f"data: {json.dumps(payload)}\n\n"
+    try:
+        while active_producers or scan_tasks:
+            wait_for = set(scan_tasks)
+            if active_producers:
+                wait_for.add(queue_task)
+            done, _ = await asyncio.wait(
+                wait_for,
+                timeout=5,
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            if not done:
+                yield f"data: {json.dumps({'type': 'enumerating_progress'})}\n\n"
+                continue
 
-    yield f"data: {json.dumps({'type': 'done', 'total': total, 'completed': completed})}\n\n"
+            if queue_task in done:
+                events = [queue_task.result()]
+                while not discovery_queue.empty():
+                    events.append(discovery_queue.get_nowait())
+
+                for event_type, value in events:
+                    if event_type == "done":
+                        active_producers -= 1
+                    else:
+                        schedule_domain(value)
+
+                if active_producers:
+                    queue_task = asyncio.create_task(discovery_queue.get())
+
+            finished_scans = [task for task in done if task in scan_tasks]
+            for task in finished_scans:
+                scan_tasks.remove(task)
+                result = task.result()
+                completed += 1
+                payload = {
+                    "type": "result",
+                    "completed": completed,
+                    "total": len(seen),
+                    "input_total": input_total,
+                    "enumerating": active_producers > 0,
+                    "result": result,
+                }
+                yield f"data: {json.dumps(payload)}\n\n"
+
+        await asyncio.gather(*producers, return_exceptions=True)
+        total = len(seen)
+        discovered = max(0, total - input_total)
+        yield f"data: {json.dumps({'type': 'done', 'total': total, 'completed': completed, 'discovered': discovered, 'enumeration_enabled': True})}\n\n"
+    finally:
+        if not queue_task.done():
+            queue_task.cancel()
+        for task in producers:
+            if not task.done():
+                task.cancel()
+        for task in scan_tasks:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(queue_task, *producers, *scan_tasks, return_exceptions=True)
 
 
 @app.post("/scan")
-async def scan_endpoint(file: UploadFile = File(...), use_ai: bool = True, use_enum: bool = False):
-    content = await file.read()
-    domains = parse_domains_from_excel(content)
-
-    if not domains:
-        return {"error": "No valid domains found in Excel file"}
+async def scan_endpoint(
+    file: Optional[UploadFile] = File(None),
+    domain: Optional[str] = Form(None),
+    use_ai: bool = True,
+    use_enum: bool = False,
+):
+    if file is not None:
+        try:
+            content = await file.read()
+            domains = parse_domains_from_excel(content)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail="Invalid Excel file") from exc
+        if not domains:
+            raise HTTPException(status_code=400, detail="No valid domains found in Excel file")
+    elif domain:
+        normalized = normalize_domain(domain)
+        if not normalized:
+            raise HTTPException(status_code=400, detail="Enter a valid domain, for example example.com")
+        domains = [normalized]
+        # A typed root domain is an enumeration request, even if a client omits
+        # the UI's use_enum query parameter.
+        use_enum = True
+    else:
+        raise HTTPException(status_code=400, detail="Upload an Excel file or enter a domain")
 
     return StreamingResponse(
         stream_scan(domains, use_ai, use_enum),

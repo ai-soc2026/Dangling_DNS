@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>DangleScan — Finding Details</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500&display=swap" rel="stylesheet"/>
+<style>
+:root {
+  --bg:#0a0c0f; --surface:#111418; --surface2:#181c22; --border:#1e242d;
+  --border2:#252c38; --text:#c8d4e0; --muted:#5a6677; --accent:#00d4ff;
+  --critical:#ff4757; --high:#ff8c00; --medium:#f0c040; --info:#4ecdc4;
+  --clean:#2ed573; --mono:'IBM Plex Mono',monospace; --sans:'IBM Plex Sans',sans-serif;
+}
+* { box-sizing:border-box; margin:0; padding:0; }
+body { min-height:100vh; background:var(--bg); color:var(--text); font-family:var(--sans); }
+header { padding:20px 32px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; animation:headerEnter .32s ease-out both; }
+.logo { color:var(--accent); font:600 18px var(--mono); }
+.logo span { color:var(--muted); font-weight:400; }
+.close-btn { padding:8px 14px; border:1px solid var(--border2); border-radius:4px; background:var(--surface); color:var(--text); cursor:pointer; font:12px var(--mono); }
+.close-btn:hover { color:var(--accent); border-color:var(--accent); }
+main { max-width:1100px; margin:auto; padding:40px 32px 64px; animation:pageEnter .42s cubic-bezier(.2,.75,.25,1) both; }
+.eyebrow,.card-title { color:var(--muted); font:500 10px var(--mono); letter-spacing:1px; text-transform:uppercase; }
+.eyebrow { margin-bottom:10px; }
+h1 { margin-bottom:12px; color:var(--accent); font:600 25px var(--mono); word-break:break-all; }
+.badges { display:flex; gap:8px; margin-bottom:30px; }
+.badge { padding:3px 8px; border:1px solid var(--border2); border-radius:3px; font:600 10px var(--mono); text-transform:uppercase; }
+.sev-critical { color:var(--critical); border-color:rgba(255,71,87,.4); background:rgba(255,71,87,.12); }
+.sev-high { color:var(--high); border-color:rgba(255,140,0,.4); background:rgba(255,140,0,.12); }
+.sev-medium { color:var(--medium); border-color:rgba(240,192,64,.4); background:rgba(240,192,64,.12); }
+.sev-info { color:var(--info); border-color:rgba(78,205,196,.4); background:rgba(78,205,196,.1); }
+.verdict { color:var(--muted); }
+.grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px; }
+.card { padding:22px; border:1px solid var(--border); border-radius:7px; background:var(--surface); }
+.card.full { grid-column:1/-1; }
+.card-title { margin-bottom:16px; padding-bottom:12px; border-bottom:1px solid var(--border); }
+.finding { font-size:14px; line-height:1.7; }
+.row { display:grid; grid-template-columns:145px 1fr; gap:16px; padding:7px 0; }
+.key { color:var(--muted); font:11px var(--mono); }
+.value { color:var(--text); font:12px var(--mono); word-break:break-word; }
+.confidence { display:flex; align-items:center; gap:12px; margin-top:18px; }
+.track { flex:1; height:4px; overflow:hidden; border-radius:3px; background:var(--surface2); }
+.fill { height:100%; background:var(--accent); }
+.ai-box { padding:16px; border:1px solid var(--border2); border-radius:5px; background:var(--bg); font-size:13px; line-height:1.7; white-space:pre-wrap; }
+.remediation { font-size:13px; line-height:1.9; }
+.error { margin-top:100px; text-align:center; color:var(--muted); font:14px var(--mono); }
+code { color:var(--accent); font-family:var(--mono); }
+@keyframes headerEnter { from { opacity:0; } to { opacity:1; } }
+@keyframes pageEnter { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }
+@media (prefers-reduced-motion:reduce) { header,main { animation:none; } }
+@media (max-width:760px) { .grid{grid-template-columns:1fr} .card.full{grid-column:auto} .row{grid-template-columns:1fr;gap:4px} }
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">DangleScan<span>.io</span></div>
+  <button class="close-btn" onclick="window.close()">Close details</button>
+</header>
+<main id="content"></main>
+<script>
+function esc(value) {
+  return String(value ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;')
+    .replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;');
+}
+function verdictLabel(value) {
+  return {clean:'Clean',dangling_dns:'Dangling DNS',takeover_vulnerable:'Takeover Risk'}[value] || value || 'Unknown';
+}
+function remediation(r) {
+  const domain=esc(r.domain), provider=esc(r.provider || 'cloud');
+  if (r.verdict === 'clean') return 'No action required.';
+  if (r.verdict === 'takeover_vulnerable') return `<strong style="color:var(--critical)">IMMEDIATE ACTION REQUIRED.</strong><br>1. Delete the DNS record for <code>${domain}</code> immediately.<br>2. If still needed, re-provision the service and update DNS.<br>3. Audit who created the record and when.<br>4. Check whether the ${provider} resource was claimed by a third party.`;
+  if (r.verdict === 'dangling_dns') return `1. Verify whether <code>${domain}</code> is still used by the owning team.<br>2. If abandoned, remove the DNS record.<br>3. If still needed, repair the ${provider} resource.<br>4. Add the finding to the DNS cleanup runbook.`;
+  return 'Review and confirm with the owning team.';
+}
+
+const storageKey = new URLSearchParams(location.search).get('key');
+let result = null;
+if (storageKey) {
+  try { result = JSON.parse(localStorage.getItem(storageKey)); } catch {}
+  localStorage.removeItem(storageKey);
+}
+const content = document.getElementById('content');
+if (!result) {
+  content.innerHTML='<div class="error">Finding details are unavailable. Return to the scan page and select the result again.</div>';
+} else {
+  document.title=`${result.domain} — DangleScan`;
+  const severity=result.severity || 'info';
+  const confidence=Math.min(100,Math.max(0,Number(result.confidence || 0)));
+  const status=result.http?.status;
+  content.innerHTML=`
+    <div class="eyebrow">Finding details</div>
+    <h1>${esc(result.domain)}</h1>
+    <div class="badges"><span class="badge sev-${esc(severity)}">${esc(severity)}</span><span class="badge verdict">${esc(verdictLabel(result.verdict))}</span></div>
+    <div class="grid">
+      <section class="card full"><div class="card-title">Finding</div><div class="finding">${esc(result.reason || 'No finding information')}</div><div class="confidence"><span class="key">Confidence</span><div class="track"><div class="fill" style="width:${confidence}%"></div></div><span class="value">${confidence}%</span></div></section>
+      <section class="card"><div class="card-title">DNS evidence</div><div class="row"><span class="key">CNAME target</span><span class="value">${esc(result.dns?.cname || 'none')}</span></div><div class="row"><span class="key">A records</span><span class="value">${esc((result.dns?.a_records || []).join(', ') || 'none')}</span></div><div class="row"><span class="key">Resolves</span><span class="value">${result.dns?.resolves?'yes':'no'}</span></div><div class="row"><span class="key">NXDOMAIN</span><span class="value">${result.dns?.nxdomain?'yes':'no'}</span></div></section>
+      <section class="card"><div class="card-title">HTTP evidence</div><div class="row"><span class="key">Status</span><span class="value" style="color:${status>=400?'var(--critical)':'var(--clean)'}">${esc(status || 'no response')}</span></div><div class="row"><span class="key">Title</span><span class="value">${esc(result.http?.title || '—')}</span></div><div class="row"><span class="key">Provider</span><span class="value">${esc(result.provider || '—')}</span></div><div class="row"><span class="key">Scan time</span><span class="value">${esc(result.scan_time_s)}s</span></div></section>
+      ${result.ai_analysis?`<section class="card full"><div class="card-title">AI analysis</div><div class="ai-box">${esc(result.ai_analysis)}</div></section>`:''}
+      <section class="card full"><div class="card-title">Remediation</div><div class="remediation">${remediation(result)}</div></section>
+    </div>`;
+}
+</script>
+</body>
+</html>
