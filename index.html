@@ -95,6 +95,62 @@ header {
 
 main { max-width: 1200px; margin: 0 auto; padding: 40px 32px; }
 
+.input-mode-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.mode-btn {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding: 8px 14px;
+  border-radius: 4px;
+  border: 1px solid var(--border2);
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.mode-btn.active {
+  border-color: var(--accent);
+  background: var(--accent-dim);
+  color: var(--accent);
+}
+
+.domain-entry {
+  display: none;
+  gap: 12px;
+  align-items: center;
+  padding: 32px;
+  border: 1px solid var(--border2);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.domain-entry.visible { display: flex; }
+
+.domain-entry label {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.domain-entry input {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border2);
+  border-radius: 4px;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  padding: 12px 14px;
+  outline: none;
+}
+
+.domain-entry input:focus { border-color: var(--accent); }
+
 .upload-zone {
   border: 1px dashed var(--border2);
   border-radius: 8px;
@@ -222,6 +278,21 @@ main { max-width: 1200px; margin: 0 auto; padding: 40px 32px; }
 .scan-btn:hover { background: #33ddff; transform: translateY(-1px); }
 .scan-btn:active { transform: translateY(0); }
 .scan-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+.stop-btn {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  background: rgba(255,71,87,0.08);
+  color: var(--critical);
+  border: 1px solid rgba(255,71,87,0.35);
+  padding: 9px 18px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.stop-btn:hover { background: rgba(255,71,87,0.16); border-color: var(--critical); }
+.stop-btn:disabled { display: none; }
 
 /* Progress bar */
 #progress-section {
@@ -583,12 +654,23 @@ td {
 </header>
 
 <main>
+  <div class="input-mode-tabs">
+    <button class="mode-btn active" id="file-mode-btn" onclick="setInputMode('file')">Upload Excel</button>
+    <button class="mode-btn" id="domain-mode-btn" onclick="setInputMode('domain')">Enter Domain</button>
+  </div>
+
   <!-- Upload -->
   <div class="upload-zone" id="drop-zone">
     <input type="file" id="file-input" accept=".xlsx,.xls"/>
     <span class="upload-icon">[xlsx]</span>
     <h2>Drop your Excel file here</h2>
     <p>One domain per cell · any sheet · any column</p>
+  </div>
+
+  <div class="domain-entry" id="domain-entry">
+    <label for="domain-input">Domain</label>
+    <input id="domain-input" type="text" placeholder="example.com or https://subdomain.example.com" autocomplete="off"/>
+    <span style="font-size:11px;color:var(--muted);white-space:nowrap">Subdomains discovered automatically</span>
   </div>
 
   <div class="controls">
@@ -612,6 +694,10 @@ td {
 
     <button class="scan-btn" id="scan-btn" disabled onclick="startScan()">
       Run Scan
+    </button>
+
+    <button class="stop-btn" id="stop-btn" disabled onclick="stopScan()">
+      Stop Scan
     </button>
   </div>
 
@@ -687,20 +773,14 @@ td {
   </div>
 </main>
 
-<!-- Overlay -->
-<div class="overlay" id="overlay" onclick="closeDrawer()"></div>
-
-<!-- Detail Drawer -->
-<div id="drawer">
-  <button class="drawer-close" onclick="closeDrawer()">✕</button>
-  <div id="drawer-content"></div>
-</div>
-
 <script>
 const API = 'http://localhost:8000';
 let allResults = [];
 let currentFilter = 'all';
 let uploadedDomains = [];
+let inputMode = 'file';
+let enumerationInputTotal = 0;
+let currentScanController = null;
 
 // Check backend, Codex, and enumeration tool health
 async function checkHealth() {
@@ -729,6 +809,31 @@ setInterval(checkHealth, 15000);
 // File handling
 const fileInput = document.getElementById('file-input');
 const dropZone = document.getElementById('drop-zone');
+const domainInput = document.getElementById('domain-input');
+
+function setInputMode(mode) {
+  inputMode = mode;
+  const isFile = mode === 'file';
+  dropZone.style.display = isFile ? 'block' : 'none';
+  document.getElementById('domain-entry').classList.toggle('visible', !isFile);
+  document.getElementById('file-badge').style.display = isFile && window._selectedFile ? 'flex' : 'none';
+  document.getElementById('file-mode-btn').classList.toggle('active', isFile);
+  document.getElementById('domain-mode-btn').classList.toggle('active', !isFile);
+  updateScanButton();
+  if (!isFile) domainInput.focus();
+}
+
+function updateScanButton() {
+  const hasInput = inputMode === 'file'
+    ? Boolean(window._selectedFile)
+    : Boolean(domainInput.value.trim());
+  document.getElementById('scan-btn').disabled = !hasInput || Boolean(currentScanController);
+}
+
+domainInput.addEventListener('input', updateScanButton);
+domainInput.addEventListener('keydown', event => {
+  if (event.key === 'Enter' && domainInput.value.trim()) startScan();
+});
 
 fileInput.addEventListener('change', e => {
   if (e.target.files[0]) handleFile(e.target.files[0]);
@@ -746,10 +851,11 @@ dropZone.addEventListener('drop', e => {
 });
 
 function handleFile(file) {
+  window._selectedFile = file;
   document.getElementById('file-name-label').textContent = file.name;
   document.getElementById('domain-count-label').textContent = '— reading...';
   document.getElementById('file-badge').classList.add('visible');
-  document.getElementById('scan-btn').disabled = false;
+  updateScanButton();
 
   // Quick count by reading file (just estimate)
   const reader = new FileReader();
@@ -758,7 +864,6 @@ function handleFile(file) {
   };
   reader.readAsArrayBuffer(file);
 
-  window._selectedFile = file;
 }
 
 // Stats tracking
@@ -780,62 +885,100 @@ function updateStatCards() {
 }
 
 async function startScan() {
-  if (!window._selectedFile) return;
+  if (currentScanController) return;
+  if (inputMode === 'file' && !window._selectedFile) return;
+  if (inputMode === 'domain' && !domainInput.value.trim()) return;
 
+  currentScanController = new AbortController();
   resetStats();
   document.getElementById('scan-btn').disabled = true;
+  document.getElementById('stop-btn').disabled = false;
   document.getElementById('progress-section').style.display = 'block';
   document.getElementById('stats-row').style.display = 'grid';
   document.getElementById('results-section').style.display = 'block';
 
   const useAi = document.getElementById('ai-cb').checked;
-  const useEnum = document.getElementById('enum-cb').checked;
+  const useEnum = inputMode === 'domain' || document.getElementById('enum-cb').checked;
   const formData = new FormData();
-  formData.append('file', window._selectedFile);
-  formData.append('use_ai', useAi ? 'true' : 'false');
-  formData.append('use_enum', useEnum ? 'true' : 'false');
-
-  const response = await fetch(`${API}/scan?use_ai=${useAi}&use_enum=${useEnum}`, {
-    method: 'POST',
-    body: formData,
-  });
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split('\n');
-    buffer = lines.pop();
-    for (const line of lines) {
-      if (line.startsWith('data: ')) {
-        try {
-          const msg = JSON.parse(line.slice(6));
-          handleMessage(msg);
-        } catch {}
-      }
-    }
+  if (inputMode === 'file') {
+    formData.append('file', window._selectedFile);
+  } else {
+    formData.append('domain', domainInput.value.trim());
   }
 
-  document.getElementById('scan-btn').disabled = false;
-  document.getElementById('scan-status-text').innerHTML = 'Scan complete';
+  try {
+    const response = await fetch(`${API}/scan?use_ai=${useAi}&use_enum=${useEnum}`, {
+      method: 'POST',
+      body: formData,
+      signal: currentScanController.signal,
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.detail || `Scan failed (${response.status})`);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop();
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          try {
+            const msg = JSON.parse(line.slice(6));
+            handleMessage(msg);
+          } catch {}
+        }
+      }
+    }
+    document.getElementById('scan-status-text').innerHTML = 'Scan complete';
+  } catch (error) {
+    document.getElementById('scan-status-text').textContent = error.name === 'AbortError'
+      ? `Scan stopped — ${stats.total} results kept`
+      : error.message;
+  } finally {
+    currentScanController = null;
+    document.getElementById('stop-btn').disabled = true;
+    updateScanButton();
+  }
+}
+
+function stopScan() {
+  if (!currentScanController) return;
+  document.getElementById('stop-btn').disabled = true;
+  document.getElementById('scan-status-text').innerHTML =
+    '<span class="spinner"></span>Stopping scan...';
+  currentScanController.abort();
 }
 
 function handleMessage(msg) {
   if (msg.type === 'enumerating') {
+    enumerationInputTotal = msg.total;
+    const domainLabel = msg.total === 1 ? 'domain' : 'domains';
     document.getElementById('scan-status-text').innerHTML =
       msg.enabled
-        ? `<span class="spinner"></span>Enumerating subdomains for ${msg.total} domains...`
-        : `<span class="spinner"></span>Preparing ${msg.total} domains...`;
+        ? `<span class="spinner"></span>Enumerating subdomains for ${msg.total} ${domainLabel}...`
+        : `<span class="spinner"></span>Preparing ${msg.total} ${domainLabel}...`;
     document.getElementById('progress-label').textContent = `0 / ${msg.total}`;
   }
 
-  if (msg.type === 'start') {
+  if (msg.type === 'enumerating_progress') {
+    const domainLabel = enumerationInputTotal === 1 ? 'domain' : 'domains';
     document.getElementById('scan-status-text').innerHTML =
-      `<span class="spinner"></span>Scanning ${msg.total} domains...`;
+      `<span class="spinner"></span>Enumerating subdomains for ${enumerationInputTotal} ${domainLabel}...`;
+  }
+
+  if (msg.type === 'start') {
+    const domainLabel = msg.input_total === 1 ? 'domain' : 'domains';
+    document.getElementById('scan-status-text').innerHTML = msg.enumerating
+      ? `<span class="spinner"></span>Enumerating subdomains for ${msg.input_total} ${domainLabel}...`
+      : `<span class="spinner"></span>Scanning ${msg.total} ${msg.total === 1 ? 'domain' : 'domains'}...`;
     document.getElementById('progress-label').textContent = `0 / ${msg.total}`;
   }
 
@@ -843,8 +986,10 @@ function handleMessage(msg) {
     const pct = Math.round((msg.completed / msg.total) * 100);
     document.getElementById('progress-fill').style.width = pct + '%';
     document.getElementById('progress-label').textContent = `${msg.completed} / ${msg.total}`;
-    document.getElementById('scan-status-text').innerHTML =
-      `<span class="spinner"></span>Scanning ${msg.total} domains...`;
+    const domainLabel = msg.input_total === 1 ? 'domain' : 'domains';
+    document.getElementById('scan-status-text').innerHTML = msg.enumerating
+      ? `<span class="spinner"></span>Enumerating subdomains for ${msg.input_total} ${domainLabel}...`
+      : `<span class="spinner"></span>Scanning ${msg.total} ${msg.total === 1 ? 'domain' : 'domains'}...`;
 
     const r = msg.result;
     allResults.push(r);
@@ -862,7 +1007,10 @@ function handleMessage(msg) {
 
   if (msg.type === 'done') {
     document.getElementById('progress-fill').style.width = '100%';
-    document.getElementById('scan-status-text').textContent = `Scan complete — ${msg.completed} domains`;
+    document.getElementById('scan-status-text').textContent =
+      msg.enumeration_enabled && msg.discovered === 0
+        ? 'Scan complete — no subdomains discovered; root domain scanned'
+        : `Scan complete — ${msg.completed} domains (${msg.discovered || 0} discovered)`;
   }
 }
 
@@ -901,7 +1049,7 @@ function appendRow(r) {
     </td>
   `;
 
-  tr.addEventListener('click', () => openDrawer(idx));
+  tr.addEventListener('click', () => openDetailsPage(idx));
   tbody.prepend(tr); // newest first
 }
 
@@ -933,6 +1081,34 @@ function setFilter(filter, btn) {
 
     tr.classList.toggle('hidden-row', !show);
   });
+}
+
+function openDetailsPage(idx) {
+  const r = allResults[idx];
+  if (!r) return;
+
+  const key = `danglescan-result-${Date.now()}-${idx}`;
+  localStorage.setItem(key, JSON.stringify(r));
+  const detailWindow = window.open('about:blank', '_blank');
+  if (!detailWindow) {
+    localStorage.removeItem(key);
+    return;
+  }
+
+  detailWindow.opener = null;
+  detailWindow.document.write(`<!DOCTYPE html><html><head><title>Opening details...</title>
+    <style>
+      *{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0a0c0f;color:#5a6677;font:13px 'IBM Plex Mono',monospace}
+      .loader{text-align:center;animation:appear .2s ease-out}.spinner{width:28px;height:28px;margin:0 auto 16px;border:2px solid #252c38;border-top-color:#00d4ff;border-radius:50%;animation:spin .7s linear infinite}
+      @keyframes spin{to{transform:rotate(360deg)}}@keyframes appear{from{opacity:0}to{opacity:1}}
+      @media(prefers-reduced-motion:reduce){.loader,.spinner{animation:none}.spinner{border-top-color:#00d4ff}}
+    </style></head><body><div class="loader"><div class="spinner"></div>Opening finding details...</div></body></html>`);
+  detailWindow.document.close();
+
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  window.setTimeout(() => {
+    detailWindow.location.replace(`detail.html?key=${encodeURIComponent(key)}`);
+  }, reducedMotion ? 80 : 450);
 }
 
 function openDrawer(idx) {
