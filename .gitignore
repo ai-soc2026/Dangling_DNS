@@ -3,3 +3,6 @@ __pycache__/
 *.py[cod]
 .env
 .DS_Store
+danglescan.db
+danglescan.db-shm
+danglescan.db-wal

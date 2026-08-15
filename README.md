@@ -42,6 +42,64 @@ brew install amass
 brew install subfinder
 ```
 
+## Scan history database
+
+DangleScan supports both SQLite and PostgreSQL through SQLAlchemy.
+
+- With no `DATABASE_URL`, it uses the local `danglescan.db` SQLite file.
+- With a PostgreSQL `DATABASE_URL`, it creates and uses the same tables in PostgreSQL.
+
+SQLite remains the zero-configuration local default. PostgreSQL is recommended
+for a deployed, shared or multi-user environment.
+
+Results are written progressively while a scan runs. If a scan is stopped, the
+results completed before the stop remain available and the scan is marked
+`stopped`.
+
+History endpoints:
+
+- `GET /history/scans` — list scans
+- `GET /history/scans/{scan_id}` — read a scan summary
+- `GET /history/scans/{scan_id}/results` — list and filter a scan's results
+- `GET /history/search?q=...` — search results across all historical scans
+- `GET /history/results/{result_id}` — read complete stored evidence
+- `PATCH /history/results/{result_id}` — update remediation status, owner and comment
+- `GET /database` — read-only JSON view of stored scans and results for demonstrations
+
+Set `DANGLESCAN_DB_PATH` before starting the backend to store the database at a
+different SQLite location.
+
+### Use PostgreSQL
+
+Configure the connection before starting the backend:
+
+```bash
+export DATABASE_URL="postgresql+psycopg://username:password@hostname:5432/danglescan"
+uvicorn main:app --host 127.0.0.1 --port 8000 --reload
+```
+
+The application creates empty `scans` and `scan_results` tables automatically.
+Do not put the real password in source code or commit it to Git.
+
+### Copy existing SQLite history to PostgreSQL
+
+First validate the source without changing PostgreSQL:
+
+```bash
+export POSTGRES_DATABASE_URL="postgresql+psycopg://username:password@hostname:5432/danglescan"
+python migrate_sqlite_to_postgres.py --dry-run
+```
+
+Then copy the history into an empty PostgreSQL database:
+
+```bash
+python migrate_sqlite_to_postgres.py
+```
+
+After the row counts are verified, set `DATABASE_URL` to the same PostgreSQL URL
+and start the application. Keep `danglescan.db` as a backup until the PostgreSQL
+deployment has been validated.
+
 ## Excel Format
 - Any .xlsx file works
 - Put domains one per cell, any sheet, any column
@@ -71,6 +129,7 @@ brew install subfinder
 ### Severity scoring
 - **Critical**: Confirmed takeover signature in HTTP body
 - **High**: Dangling CNAME to cloud provider, NXDOMAIN
+- **High**: Redirect to an unrelated external domain (unless it is the built-in Condé Nast Okta tenant or is allowlisted with `REDIRECT_DOMAIN_ALLOWLIST`)
 - **Medium**: HTTP 404/410 on cloud-pointed domain
 - **Clean**: Domain resolves and no issues found
 

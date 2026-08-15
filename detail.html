@@ -39,6 +39,10 @@ h1 { margin-bottom:12px; color:var(--accent); font:600 25px var(--mono); word-br
 .row { display:grid; grid-template-columns:145px 1fr; gap:16px; padding:7px 0; }
 .key { color:var(--muted); font:11px var(--mono); }
 .value { color:var(--text); font:12px var(--mono); word-break:break-word; }
+.external-link { display:inline-flex; align-items:center; gap:7px; color:var(--accent); text-decoration:none; border-bottom:1px solid rgba(0,212,255,.35); }
+.external-link:hover,.external-link:focus-visible { color:#7be8ff; border-bottom-color:#7be8ff; outline:none; }
+.external-arrow { flex:0 0 auto; font-size:14px; line-height:1; transition:transform .16s ease; }
+.external-link:hover .external-arrow,.external-link:focus-visible .external-arrow { transform:translate(2px,-2px); }
 .confidence { display:flex; align-items:center; gap:12px; margin-top:18px; }
 .track { flex:1; height:4px; overflow:hidden; border-radius:3px; background:var(--surface2); }
 .fill { height:100%; background:var(--accent); }
@@ -64,11 +68,32 @@ function esc(value) {
     .replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;');
 }
 function verdictLabel(value) {
-  return {clean:'Clean',dangling_dns:'Dangling DNS',takeover_vulnerable:'Takeover Risk'}[value] || value || 'Unknown';
+  return {clean:'Clean',inactive:'Inactive',dangling_dns:'Dangling DNS',takeover_vulnerable:'Takeover Risk',ownership_validation_required:'Ownership Validation Required'}[value] || value || 'Unknown';
+}
+function dnsErrors(dns) {
+  const entries=Object.entries(dns?.query_errors || {});
+  return entries.length ? entries.map(([type,message])=>`${type}: ${message}`).join(' | ') : 'none';
+}
+function providerDisplay(r) {
+  if (r.provider) return r.provider;
+  return r.dns?.cname ? 'Not identified from CNAME' : 'Not applicable — no CNAME';
+}
+function finalUrlLink(value) {
+  if (!value) return 'none';
+  try {
+    const url = new URL(value);
+    if (!['http:', 'https:'].includes(url.protocol)) return esc(value);
+    const safeUrl = esc(url.href);
+    return `<a class="external-link" href="${safeUrl}" target="_blank" rel="noopener noreferrer" title="Open the scanned final URL in a new tab"><span>${esc(value)}</span><span class="external-arrow" aria-hidden="true">↗</span></a>`;
+  } catch {
+    return esc(value);
+  }
 }
 function remediation(r) {
   const domain=esc(r.domain), provider=esc(r.provider || 'cloud');
   if (r.verdict === 'clean') return 'No action required.';
+  if (r.verdict === 'inactive') return 'No takeover remediation required. Confirm whether this historical hostname should remain in the asset inventory.';
+  if (r.verdict === 'ownership_validation_required') return `<strong style="color:var(--high)">OWNERSHIP VALIDATION REQUIRED.</strong><br>1. Confirm the currently resolving resource belongs to an approved corporate account.<br>2. Compare the current DNS, final URL, HTTP title and content with the previous dangling result.<br>3. Contact the recorded owning team before changing DNS.<br>4. Mark the previous finding Resolved or False Positive only after ownership is verified.`;
   if (r.verdict === 'takeover_vulnerable') return `<strong style="color:var(--critical)">IMMEDIATE ACTION REQUIRED.</strong><br>1. Delete the DNS record for <code>${domain}</code> immediately.<br>2. If still needed, re-provision the service and update DNS.<br>3. Audit who created the record and when.<br>4. Check whether the ${provider} resource was claimed by a third party.`;
   if (r.verdict === 'dangling_dns') return `1. Verify whether <code>${domain}</code> is still used by the owning team.<br>2. If abandoned, remove the DNS record.<br>3. If still needed, repair the ${provider} resource.<br>4. Add the finding to the DNS cleanup runbook.`;
   return 'Review and confirm with the owning team.';
@@ -94,8 +119,9 @@ if (!result) {
     <div class="badges"><span class="badge sev-${esc(severity)}">${esc(severity)}</span><span class="badge verdict">${esc(verdictLabel(result.verdict))}</span></div>
     <div class="grid">
       <section class="card full"><div class="card-title">Finding</div><div class="finding">${esc(result.reason || 'No finding information')}</div><div class="confidence"><span class="key">Confidence</span><div class="track"><div class="fill" style="width:${confidence}%"></div></div><span class="value">${confidence}%</span></div></section>
-      <section class="card"><div class="card-title">DNS evidence</div><div class="row"><span class="key">CNAME target</span><span class="value">${esc(result.dns?.cname || 'none')}</span></div><div class="row"><span class="key">A records</span><span class="value">${esc((result.dns?.a_records || []).join(', ') || 'none')}</span></div><div class="row"><span class="key">Resolves</span><span class="value">${result.dns?.resolves?'yes':'no'}</span></div><div class="row"><span class="key">NXDOMAIN</span><span class="value">${result.dns?.nxdomain?'yes':'no'}</span></div></section>
-      <section class="card"><div class="card-title">HTTP evidence</div><div class="row"><span class="key">Status</span><span class="value" style="color:${status>=400?'var(--critical)':'var(--clean)'}">${esc(status || 'no response')}</span></div><div class="row"><span class="key">Title</span><span class="value">${esc(result.http?.title || '—')}</span></div><div class="row"><span class="key">Provider</span><span class="value">${esc(result.provider || '—')}</span></div><div class="row"><span class="key">Scan time</span><span class="value">${esc(result.scan_time_s)}s</span></div></section>
+      <section class="card"><div class="card-title">DNS evidence</div><div class="row"><span class="key">DNS state</span><span class="value">${esc(result.dns?.resolution_status || (result.dns?.nxdomain?'NXDOMAIN':result.dns?.resolves?'Resolved':'No DNS answer'))}</span></div><div class="row"><span class="key">Record types</span><span class="value">${esc((result.dns?.record_types || []).join(', ') || 'none')}</span></div><div class="row"><span class="key">CNAME target</span><span class="value">${esc(result.dns?.cname || 'none')}</span></div><div class="row"><span class="key">A records</span><span class="value">${esc((result.dns?.a_records || []).join(', ') || 'none')}</span></div><div class="row"><span class="key">AAAA records</span><span class="value">${esc((result.dns?.aaaa_records || []).join(', ') || 'none')}</span></div><div class="row"><span class="key">Query errors</span><span class="value">${esc(dnsErrors(result.dns))}</span></div><div class="row"><span class="key">CNAME target NXDOMAIN</span><span class="value">${result.dns?.cname_target_nxdomain?'yes':'no'}</span></div><div class="row"><span class="key">Resolves</span><span class="value">${result.dns?.resolves?'yes':'no'}</span></div><div class="row"><span class="key">NXDOMAIN</span><span class="value">${result.dns?.nxdomain?'yes':'no'}</span></div></section>
+      <section class="card"><div class="card-title">HTTP and provider evidence</div><div class="row"><span class="key">Attempted</span><span class="value">${result.http?.attempted?'yes':'no'}</span></div><div class="row"><span class="key">Status</span><span class="value" style="color:${status>=400?'var(--critical)':status?'var(--clean)':'var(--muted)'}">${esc(status || (result.http?.attempted?'no response':'not attempted'))}</span></div><div class="row"><span class="key">Final URL</span><span class="value">${finalUrlLink(result.http?.url)}</span></div><div class="row"><span class="key">Title</span><span class="value">${esc(result.http?.title || 'none')}</span></div><div class="row"><span class="key">HTTP error</span><span class="value">${esc(result.http?.error || 'none')}</span></div><div class="row"><span class="key">Takeover provider</span><span class="value">${esc(providerDisplay(result))}</span></div><div class="row"><span class="key">Provider evidence</span><span class="value">${esc(result.provider_evidence || 'No provider evidence supplied')}</span></div><div class="row"><span class="key">Scan time</span><span class="value">${esc(result.scan_time_s)}s</span></div></section>
+      ${result.history_evidence?`<section class="card full"><div class="card-title">Historical change evidence</div><div class="row"><span class="key">Change detected</span><span class="value">${esc(result.history_evidence.change || 'Previously dangling target now resolves')}</span></div><div class="row"><span class="key">Previous verdict</span><span class="value">${esc(verdictLabel(result.history_evidence.previous_verdict))}</span></div><div class="row"><span class="key">Previous DNS state</span><span class="value">${esc(result.history_evidence.previous_dns_state || 'unknown')}</span></div><div class="row"><span class="key">Previous CNAME</span><span class="value">${esc(result.history_evidence.previous_cname || 'none')}</span></div><div class="row"><span class="key">Previous observation</span><span class="value">${esc(result.history_evidence.previous_created_at || 'unknown')}</span></div><div class="row"><span class="key">Previous remediation</span><span class="value">${esc(result.history_evidence.previous_remediation_status || 'Open')}</span></div><div class="row"><span class="key">Current DNS state</span><span class="value">${esc(result.history_evidence.current_dns_state || 'Resolved')}</span></div><div class="row"><span class="key">Current HTTP</span><span class="value">${esc(result.history_evidence.current_http_status || 'none')}</span></div><div class="row"><span class="key">Current URL</span><span class="value">${finalUrlLink(result.history_evidence.current_http_url)}</span></div></section>`:''}
       ${result.ai_analysis?`<section class="card full"><div class="card-title">AI analysis</div><div class="ai-box">${esc(result.ai_analysis)}</div></section>`:''}
       <section class="card full"><div class="card-title">Remediation</div><div class="remediation">${remediation(result)}</div></section>
     </div>`;
