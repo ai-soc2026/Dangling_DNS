@@ -68,7 +68,7 @@ function esc(value) {
     .replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;');
 }
 function verdictLabel(value) {
-  return {clean:'Clean',inactive:'Inactive',dangling_dns:'Dangling DNS',takeover_vulnerable:'Takeover Risk',ownership_validation_required:'Ownership Validation Required'}[value] || value || 'Unknown';
+  return {clean:'Clean',inactive:'Not Resolving',dangling_dns:'Dangling DNS',takeover_vulnerable:'Takeover Risk',confirmed_compromise:'Confirmed Compromise',ownership_validation_required:'Ownership Validation Required'}[value] || value || 'Unknown';
 }
 function dnsErrors(dns) {
   const entries=Object.entries(dns?.query_errors || {});
@@ -92,7 +92,8 @@ function finalUrlLink(value) {
 function remediation(r) {
   const domain=esc(r.domain), provider=esc(r.provider || 'cloud');
   if (r.verdict === 'clean') return 'No action required.';
-  if (r.verdict === 'inactive') return 'No takeover remediation required. Confirm whether this historical hostname should remain in the asset inventory.';
+  if (r.verdict === 'inactive') return 'No active web DNS target was found. Confirm whether this hostname was intentionally retired or needs to be restored.';
+  if (r.verdict === 'confirmed_compromise') return `<strong style="color:var(--critical)">CONFIRMED COMPROMISE — IMMEDIATE ACTION REQUIRED.</strong><br>1. Remove or isolate the affected DNS/hosting path.<br>2. Preserve the redirect and hosting evidence for incident review.<br>3. Validate the authoritative DNS response after remediation.<br>4. Keep the historical finding and mark it Resolved only after verification.`;
   if (r.verdict === 'ownership_validation_required') return `<strong style="color:var(--high)">OWNERSHIP VALIDATION REQUIRED.</strong><br>1. Confirm the currently resolving resource belongs to an approved corporate account.<br>2. Compare the current DNS, final URL, HTTP title and content with the previous dangling result.<br>3. Contact the recorded owning team before changing DNS.<br>4. Mark the previous finding Resolved or False Positive only after ownership is verified.`;
   if (r.verdict === 'takeover_vulnerable') return `<strong style="color:var(--critical)">IMMEDIATE ACTION REQUIRED.</strong><br>1. Delete the DNS record for <code>${domain}</code> immediately.<br>2. If still needed, re-provision the service and update DNS.<br>3. Audit who created the record and when.<br>4. Check whether the ${provider} resource was claimed by a third party.`;
   if (r.verdict === 'dangling_dns') return `1. Verify whether <code>${domain}</code> is still used by the owning team.<br>2. If abandoned, remove the DNS record.<br>3. If still needed, repair the ${provider} resource.<br>4. Add the finding to the DNS cleanup runbook.`;

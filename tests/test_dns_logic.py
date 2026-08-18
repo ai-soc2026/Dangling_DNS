@@ -53,7 +53,7 @@ class DnsClassificationTests(unittest.TestCase):
         self.assertEqual(analysis["severity"], "high")
         self.assertEqual(analysis["confidence"], 85)
 
-    def test_unrelated_external_redirect_is_high(self):
+    def test_confirmed_readerspoll_redirect_is_critical(self):
         analysis = main.rule_based_analysis(
             "readerspoll.pitchfork.com",
             {
@@ -69,10 +69,56 @@ class DnsClassificationTests(unittest.TestCase):
             },
         )
 
+        self.assertEqual(analysis["verdict"], "confirmed_compromise")
+        self.assertEqual(analysis["severity"], "critical")
+        self.assertEqual(analysis["confidence"], 100)
+        self.assertIn("rez.onfan.co", analysis["reason"])
+
+    def test_unknown_external_redirect_is_high(self):
+        analysis = main.rule_based_analysis(
+            "legacy.example.com",
+            {
+                "nxdomain": False,
+                "resolves": True,
+                "record_types": ["A"],
+                "query_errors": {},
+                "cname_target": "",
+                "cname_target_nxdomain": False,
+            },
+            {
+                "status": 200,
+                "url": "https://unknown-vendor.example.net/landing",
+                "title": "Unknown landing page",
+                "body_snippet": "",
+            },
+        )
+
         self.assertEqual(analysis["verdict"], "suspicious_redirect")
         self.assertEqual(analysis["severity"], "high")
         self.assertEqual(analysis["confidence"], 90)
-        self.assertIn("rez.onfan.co", analysis["reason"])
+
+    def test_nodata_without_web_records_is_not_resolving(self):
+        analysis = main.rule_based_analysis(
+            "empty.example.com",
+            {
+                "nxdomain": False,
+                "resolves": False,
+                "record_types": [],
+                "query_errors": {},
+                "cname_target": "",
+                "cname_target_nxdomain": False,
+            },
+            {
+                "status": None,
+                "url": None,
+                "title": None,
+                "body_snippet": "",
+            },
+        )
+
+        self.assertEqual(analysis["verdict"], "inactive")
+        self.assertEqual(analysis["severity"], "info")
+        self.assertIn("no A, AAAA, or CNAME", analysis["reason"])
 
     def test_same_domain_redirect_stays_clean(self):
         analysis = main.rule_based_analysis(

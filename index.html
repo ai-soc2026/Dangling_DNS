@@ -1114,7 +1114,7 @@ td {
     </button>
     <button type="button" class="stat-card inactive" data-category="inactive" onclick="showCategory('inactive')">
       <span class="num" id="stat-inactive">0</span>
-      <span class="lbl">Inactive</span>
+      <span class="lbl">Not Resolving</span>
     </button>
     <button type="button" class="stat-card clean" data-category="clean" onclick="showCategory('clean')">
       <span class="num" id="stat-clean">0</span>
@@ -1166,7 +1166,8 @@ td {
           <select id="verdict-filter">
             <option value="all">Any verdict</option>
             <option value="clean">Clean</option>
-            <option value="inactive">Inactive</option>
+            <option value="inactive">Not Resolving</option>
+            <option value="confirmed_compromise">Confirmed Compromise</option>
             <option value="dangling_dns">Dangling DNS</option>
             <option value="takeover_vulnerable">Takeover Risk</option>
             <option value="ownership_validation_required">Ownership Validation Required</option>
@@ -1241,7 +1242,7 @@ td {
           <button class="ftab" data-filter="critical" onclick="setFilter('critical',this)">Critical</button>
           <button class="ftab" data-filter="high" onclick="setFilter('high',this)">High</button>
           <button class="ftab" data-filter="medium" onclick="setFilter('medium',this)">Medium</button>
-          <button class="ftab" data-filter="inactive" onclick="setFilter('inactive',this)">Inactive</button>
+          <button class="ftab" data-filter="inactive" onclick="setFilter('inactive',this)">Not Resolving</button>
           <button class="ftab" data-filter="clean" onclick="setFilter('clean',this)">Clean</button>
         </div>
       </div>
@@ -1623,7 +1624,8 @@ function handleMessage(msg) {
 function verdictLabel(v) {
   return {
     clean: 'Clean',
-    inactive: 'Inactive',
+    inactive: 'Not Resolving',
+    confirmed_compromise: 'Confirmed Compromise',
     dangling_dns: 'Dangling DNS',
     takeover_vulnerable: 'Takeover Risk',
     ownership_validation_required: 'Ownership Validation Required',
@@ -2038,7 +2040,14 @@ function openDrawer(idx) {
 
 function getRemediation(r) {
   if (r.verdict === 'clean') return 'No action required.';
-  if (r.verdict === 'inactive') return 'No takeover remediation required. Confirm whether this historical hostname should remain in the asset inventory.';
+  if (r.verdict === 'inactive') return 'No active web DNS target was found. Confirm whether this hostname was intentionally retired or needs to be restored.';
+  if (r.verdict === 'confirmed_compromise') {
+    return `<strong style="color:var(--critical)">CONFIRMED COMPROMISE — IMMEDIATE ACTION REQUIRED.</strong><br>
+    1. Remove or isolate the affected DNS/hosting path.<br>
+    2. Preserve the redirect and hosting evidence for incident review.<br>
+    3. Validate the authoritative DNS response after remediation.<br>
+    4. Mark the finding Resolved only after verification.`;
+  }
   if (r.verdict === 'ownership_validation_required') {
     return `<strong style="color:var(--high)">OWNERSHIP VALIDATION REQUIRED.</strong><br>
     1. Confirm the currently resolving resource belongs to an approved corporate account.<br>

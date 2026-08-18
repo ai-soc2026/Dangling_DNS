@@ -128,9 +128,11 @@ deployment has been validated.
 
 ### Severity scoring
 - **Critical**: Confirmed takeover signature in HTTP body
+- **Critical**: Confirmed unauthorized redirect or compromise supported by incident evidence
 - **High**: Dangling CNAME to cloud provider, NXDOMAIN
 - **High**: Redirect to an unrelated external domain (unless it is the built-in Condé Nast Okta tenant or is allowlisted with `REDIRECT_DOMAIN_ALLOWLIST`)
 - **Medium**: HTTP 404/410 on cloud-pointed domain
+- **Not Resolving**: NXDOMAIN or no usable A, AAAA or CNAME web target (stored internally as `inactive`)
 - **Clean**: Domain resolves and no issues found
 
 ## Performance
