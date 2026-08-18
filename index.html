@@ -1167,7 +1167,7 @@ td {
             <option value="all">Any verdict</option>
             <option value="clean">Clean</option>
             <option value="inactive">Not Resolving</option>
-            <option value="confirmed_compromise">Confirmed Compromise</option>
+            <option value="suspicious_redirect">Suspicious Redirect</option>
             <option value="dangling_dns">Dangling DNS</option>
             <option value="takeover_vulnerable">Takeover Risk</option>
             <option value="ownership_validation_required">Ownership Validation Required</option>
@@ -1625,7 +1625,7 @@ function verdictLabel(v) {
   return {
     clean: 'Clean',
     inactive: 'Not Resolving',
-    confirmed_compromise: 'Confirmed Compromise',
+    suspicious_redirect: 'Suspicious Redirect',
     dangling_dns: 'Dangling DNS',
     takeover_vulnerable: 'Takeover Risk',
     ownership_validation_required: 'Ownership Validation Required',
@@ -2041,12 +2041,12 @@ function openDrawer(idx) {
 function getRemediation(r) {
   if (r.verdict === 'clean') return 'No action required.';
   if (r.verdict === 'inactive') return 'No active web DNS target was found. Confirm whether this hostname was intentionally retired or needs to be restored.';
-  if (r.verdict === 'confirmed_compromise') {
-    return `<strong style="color:var(--critical)">CONFIRMED COMPROMISE — IMMEDIATE ACTION REQUIRED.</strong><br>
-    1. Remove or isolate the affected DNS/hosting path.<br>
-    2. Preserve the redirect and hosting evidence for incident review.<br>
-    3. Validate the authoritative DNS response after remediation.<br>
-    4. Mark the finding Resolved only after verification.`;
+  if (r.verdict === 'suspicious_redirect') {
+    return `<strong style="color:var(--critical)">UNAPPROVED EXTERNAL REDIRECT — IMMEDIATE INVESTIGATION REQUIRED.</strong><br>
+    1. Confirm whether the destination is organization-approved.<br>
+    2. Remove or isolate any unauthorized DNS or hosting path.<br>
+    3. Preserve redirect evidence for incident review.<br>
+    4. Validate the authoritative DNS and final URL after remediation.`;
   }
   if (r.verdict === 'ownership_validation_required') {
     return `<strong style="color:var(--high)">OWNERSHIP VALIDATION REQUIRED.</strong><br>

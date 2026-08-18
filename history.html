@@ -144,7 +144,7 @@ tbody tr:hover { background:rgba(0,212,255,.035); }
     </div>
     <div class="toolbar">
       <input id="result-search" type="search" placeholder="Search this scan's evidence..."/>
-      <select id="result-category"><option value="">Any result category</option><option value="confirmed_compromise">Confirmed compromise</option><option value="ownership_validation_required">Ownership validation required</option><option value="takeover_vulnerable">Takeover candidate</option><option value="dangling_dns">Dangling DNS</option><option value="inactive">Not Resolving</option><option value="clean">Clean</option></select>
+      <select id="result-category"><option value="">Any result category</option><option value="suspicious_redirect">Suspicious redirect</option><option value="ownership_validation_required">Ownership validation required</option><option value="takeover_vulnerable">Takeover candidate</option><option value="dangling_dns">Dangling DNS</option><option value="inactive">Not Resolving</option><option value="clean">Clean</option></select>
       <button class="button primary" type="button" onclick="loadSelectedScanResults()">Run Filter</button>
     </div>
     <div class="table-wrap">
@@ -202,7 +202,7 @@ function dateLabel(value) {
 }
 
 function verdictLabel(value) {
-  return {clean:'Clean',inactive:'Not Resolving',dangling_dns:'Dangling DNS',takeover_vulnerable:'Takeover candidate',confirmed_compromise:'Confirmed compromise',ownership_validation_required:'Ownership validation required'}[value] || value || 'Unknown';
+  return {clean:'Clean',inactive:'Not Resolving',dangling_dns:'Dangling DNS',takeover_vulnerable:'Takeover candidate',suspicious_redirect:'Suspicious Redirect',ownership_validation_required:'Ownership validation required'}[value] || value || 'Unknown';
 }
 
 function showError(message) {

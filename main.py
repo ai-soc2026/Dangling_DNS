@@ -200,12 +200,6 @@ DEFAULT_REDIRECT_DOMAIN_ALLOWLIST = {
     "condenast-hub.oktapreview.com",
 }
 
-# Confirmed incident pairs are intentionally hostname-specific. Unknown
-# external redirects remain High until an analyst confirms compromise.
-CONFIRMED_COMPROMISE_REDIRECTS = {
-    "readerspoll.pitchfork.com": {"rez.onfan.co"},
-}
-
 CLOUD_CNAME_PATTERNS = [
     (r"\.s3\.amazonaws\.com$", "AWS S3"),
     (r"\.s3-website.*\.amazonaws\.com$", "AWS S3 Website"),
@@ -532,32 +526,18 @@ def rule_based_analysis(domain: str, dns_info: dict, http_info: dict) -> dict:
         final_hostname == allowed or final_hostname.endswith(f".{allowed}")
         for allowed in allowed_redirect_hosts
     )
-    redirect_is_confirmed_compromise = final_hostname in CONFIRMED_COMPROMISE_REDIRECTS.get(
-        requested_hostname,
-        set(),
-    )
     if (
-        verdict == "clean"
-        and final_hostname
+        final_hostname
         and not same_domain_family(requested_hostname, final_hostname)
         and not redirect_is_allowed
     ):
-        if redirect_is_confirmed_compromise:
-            verdict = "confirmed_compromise"
-            severity = "critical"
-            reason = (
-                f"Confirmed unauthorized redirect from {requested_hostname} to "
-                f"{final_hostname}; isolate the endpoint and remove the compromised DNS or hosting path"
-            )
-            confidence = 100
-        else:
-            verdict = "suspicious_redirect"
-            severity = "high"
-            reason = (
-                f"Request for {requested_hostname} redirects to unrelated host "
-                f"{final_hostname}; validate for compromise, stale hosting, or an unauthorized redirect"
-            )
-            confidence = 90
+        verdict = "suspicious_redirect"
+        severity = "critical"
+        reason = (
+            f"Request for {requested_hostname} redirects to unapproved external host "
+            f"{final_hostname}; immediate investigation and containment are required"
+        )
+        confidence = 90
 
     return {
         "verdict": verdict,

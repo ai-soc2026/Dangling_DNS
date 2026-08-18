@@ -53,7 +53,7 @@ class DnsClassificationTests(unittest.TestCase):
         self.assertEqual(analysis["severity"], "high")
         self.assertEqual(analysis["confidence"], 85)
 
-    def test_confirmed_readerspoll_redirect_is_critical(self):
+    def test_unapproved_readerspoll_redirect_is_critical(self):
         analysis = main.rule_based_analysis(
             "readerspoll.pitchfork.com",
             {
@@ -69,12 +69,12 @@ class DnsClassificationTests(unittest.TestCase):
             },
         )
 
-        self.assertEqual(analysis["verdict"], "confirmed_compromise")
+        self.assertEqual(analysis["verdict"], "suspicious_redirect")
         self.assertEqual(analysis["severity"], "critical")
-        self.assertEqual(analysis["confidence"], 100)
+        self.assertEqual(analysis["confidence"], 90)
         self.assertIn("rez.onfan.co", analysis["reason"])
 
-    def test_unknown_external_redirect_is_high(self):
+    def test_unknown_external_redirect_is_critical(self):
         analysis = main.rule_based_analysis(
             "legacy.example.com",
             {
@@ -94,7 +94,7 @@ class DnsClassificationTests(unittest.TestCase):
         )
 
         self.assertEqual(analysis["verdict"], "suspicious_redirect")
-        self.assertEqual(analysis["severity"], "high")
+        self.assertEqual(analysis["severity"], "critical")
         self.assertEqual(analysis["confidence"], 90)
 
     def test_nodata_without_web_records_is_not_resolving(self):
