@@ -24,9 +24,11 @@ from sqlalchemy import (
     create_engine,
     event,
     func,
+    inspect,
     insert,
     or_,
     select,
+    text,
     update,
 )
 from sqlalchemy.engine import Engine, make_url
@@ -91,6 +93,7 @@ scans_table = Table(
     Column("critical_count", Integer, nullable=False, default=0),
     Column("high_count", Integer, nullable=False, default=0),
     Column("medium_count", Integer, nullable=False, default=0),
+    Column("info_count", Integer, nullable=False, default=0),
     Column("inactive_count", Integer, nullable=False, default=0),
     Column("clean_count", Integer, nullable=False, default=0),
     Column("error", Text),
@@ -157,6 +160,17 @@ def _utc_now() -> str:
 
 def initialize_database() -> None:
     metadata.create_all(engine)
+    existing_columns = {
+        column["name"] for column in inspect(engine).get_columns("scans")
+    }
+    if "info_count" not in existing_columns:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "ALTER TABLE scans ADD COLUMN info_count "
+                    "INTEGER NOT NULL DEFAULT 0"
+                )
+            )
 
 
 def create_scan(
@@ -184,6 +198,7 @@ def create_scan(
         "critical_count": 0,
         "high_count": 0,
         "medium_count": 0,
+        "info_count": 0,
         "inactive_count": 0,
         "clean_count": 0,
     }
@@ -222,7 +237,9 @@ def _result_bucket(result: dict[str, Any]) -> str:
         return severity
     if verdict == "inactive":
         return "inactive"
-    return "clean"
+    if verdict == "clean":
+        return "clean"
+    return "info"
 
 
 def save_scan_result(

@@ -476,7 +476,7 @@ main { max-width: 1400px; margin: 0 auto; padding: 44px 32px 80px; }
 /* Stats row */
 #stats-row {
   display: none;
-  grid-template-columns: repeat(6, 1fr);
+  grid-template-columns: repeat(7, 1fr);
   gap: 12px;
   margin-top: 28px;
 }
@@ -523,6 +523,7 @@ main { max-width: 1400px; margin: 0 auto; padding: 44px 32px 80px; }
 .stat-card.critical .num { color: var(--critical); }
 .stat-card.high .num { color: var(--high); }
 .stat-card.medium .num { color: var(--medium); }
+.stat-card.info .num { color: var(--info); }
 .stat-card.inactive .num { color: var(--info); }
 .stat-card.clean .num { color: var(--clean); }
 .stat-card.total .num { color: var(--accent); }
@@ -1095,7 +1096,7 @@ td {
   </div>
 
   <!-- Stats -->
-  <div id="stats-row" style="display:none;grid-template-columns:repeat(6,1fr);gap:12px;margin-top:28px;">
+  <div id="stats-row" style="display:none;grid-template-columns:repeat(7,1fr);gap:12px;margin-top:28px;">
     <button type="button" class="stat-card total active" data-category="all" onclick="showCategory('all')">
       <span class="num" id="stat-total">0</span>
       <span class="lbl">Scanned</span>
@@ -1111,6 +1112,10 @@ td {
     <button type="button" class="stat-card medium" data-category="medium" onclick="showCategory('medium')">
       <span class="num" id="stat-medium">0</span>
       <span class="lbl">Medium</span>
+    </button>
+    <button type="button" class="stat-card info" data-category="info" onclick="showCategory('info')">
+      <span class="num" id="stat-info">0</span>
+      <span class="lbl">Info</span>
     </button>
     <button type="button" class="stat-card inactive" data-category="inactive" onclick="showCategory('inactive')">
       <span class="num" id="stat-inactive">0</span>
@@ -1168,6 +1173,11 @@ td {
             <option value="clean">Clean</option>
             <option value="inactive">Not Resolving</option>
             <option value="suspicious_redirect">Suspicious Redirect</option>
+            <option value="provider_resource_risk">Provider Resource Risk</option>
+            <option value="provider_service_error">Provider Service Error</option>
+            <option value="vendor_default_page">Vendor Default Page</option>
+            <option value="http_observation">HTTP Observation</option>
+            <option value="scan_error">Scan Error</option>
             <option value="dangling_dns">Dangling DNS</option>
             <option value="takeover_vulnerable">Takeover Risk</option>
             <option value="ownership_validation_required">Ownership Validation Required</option>
@@ -1470,10 +1480,10 @@ function handleFile(file) {
 }
 
 // Stats tracking
-let stats = { total: 0, critical: 0, high: 0, medium: 0, inactive: 0, clean: 0 };
+let stats = { total: 0, critical: 0, high: 0, medium: 0, info: 0, inactive: 0, clean: 0 };
 
 function resetStats() {
-  stats = { total: 0, critical: 0, high: 0, medium: 0, inactive: 0, clean: 0 };
+  stats = { total: 0, critical: 0, high: 0, medium: 0, info: 0, inactive: 0, clean: 0 };
   allResults = [];
   updateStatCards();
   document.getElementById('results-tbody').innerHTML = '';
@@ -1486,6 +1496,7 @@ function updateStatCards() {
   document.getElementById('stat-critical').textContent = stats.critical;
   document.getElementById('stat-high').textContent = stats.high;
   document.getElementById('stat-medium').textContent = stats.medium;
+  document.getElementById('stat-info').textContent = stats.info;
   document.getElementById('stat-inactive').textContent = stats.inactive;
   document.getElementById('stat-clean').textContent = stats.clean;
 }
@@ -1606,7 +1617,8 @@ function handleMessage(msg) {
     else if (r.severity === 'high') stats.high++;
     else if (r.severity === 'medium') stats.medium++;
     else if (r.verdict === 'clean') stats.clean++;
-    else stats.inactive++;
+    else if (r.verdict === 'inactive') stats.inactive++;
+    else stats.info++;
     updateStatCards();
 
     appendRow(r);
@@ -1626,6 +1638,11 @@ function verdictLabel(v) {
     clean: 'Clean',
     inactive: 'Not Resolving',
     suspicious_redirect: 'Suspicious Redirect',
+    provider_resource_risk: 'Provider Resource Risk',
+    provider_service_error: 'Provider Service Error',
+    vendor_default_page: 'Vendor Default Page',
+    http_observation: 'HTTP Observation',
+    scan_error: 'Scan Error',
     dangling_dns: 'Dangling DNS',
     takeover_vulnerable: 'Takeover Risk',
     ownership_validation_required: 'Ownership Validation Required',
@@ -1783,7 +1800,9 @@ function collectFilterCriteria() {
 function matchesAllFilters(r, filters = appliedFilters) {
   if (filters.severity === 'clean' && r.verdict !== 'clean') return false;
   if (filters.severity === 'inactive' && r.verdict !== 'inactive') return false;
-  if (!['all', 'clean', 'inactive'].includes(filters.severity) &&
+  if (filters.severity === 'info' &&
+      (r.severity !== 'info' || ['clean', 'inactive'].includes(r.verdict))) return false;
+  if (!['all', 'clean', 'inactive', 'info'].includes(filters.severity) &&
       r.severity !== filters.severity) return false;
 
   if (filters.search && !searchableEvidence(r).includes(filters.search)) return false;
@@ -2016,6 +2035,7 @@ function openDrawer(idx) {
       <div class="kv-row"><span class="kv-key">Status</span><span class="kv-val" style="color:${(r.http?.status||0) >= 400 ? 'var(--critical)' : 'var(--clean)'}">${r.http?.status || 'no response'}</span></div>
       <div class="kv-row"><span class="kv-key">Title</span><span class="kv-val">${r.http?.title || '—'}</span></div>
       <div class="kv-row"><span class="kv-key">Provider</span><span class="kv-val">${r.provider || '—'}</span></div>
+      <div class="kv-row"><span class="kv-key">Provider evidence</span><span class="kv-val">${r.provider_evidence || '—'}</span></div>
       <div class="kv-row"><span class="kv-key">Scan time</span><span class="kv-val">${r.scan_time_s}s</span></div>
     </div>
 
@@ -2048,6 +2068,17 @@ function getRemediation(r) {
     3. Preserve redirect evidence for incident review.<br>
     4. Validate the authoritative DNS and final URL after remediation.`;
   }
+  if (r.verdict === 'provider_resource_risk') {
+    return `<strong style="color:var(--high)">PROVIDER RESOURCE VALIDATION REQUIRED.</strong><br>
+    1. Confirm the resource and custom-domain association belong to an approved account.<br>
+    2. Check provider configuration, subscription and deployment status.<br>
+    3. Remove the DNS record if the service has been retired.<br>
+    4. Re-scan after remediation.`;
+  }
+  if (r.verdict === 'provider_service_error') return 'Check the identified provider service and its origin or deployment health. Treat this as an availability/configuration review unless stronger provider-specific risk evidence appears.';
+  if (r.verdict === 'vendor_default_page') return 'Confirm that this branded vendor endpoint is approved and expected. No takeover remediation is required from the current evidence.';
+  if (r.verdict === 'http_observation') return 'Confirm whether the observed HTTP response is expected. No takeover remediation is required without provider-specific risk evidence.';
+  if (r.verdict === 'scan_error') return 'Re-run the scan and validate resolver/network access. Do not treat this hostname as Clean until evidence collection succeeds.';
   if (r.verdict === 'ownership_validation_required') {
     return `<strong style="color:var(--high)">OWNERSHIP VALIDATION REQUIRED.</strong><br>
     1. Confirm the currently resolving resource belongs to an approved corporate account.<br>

@@ -39,8 +39,9 @@ TAKEOVER_SIGNATURES = (
     {
         "provider": "AWS S3",
         "cname_patterns": (r"\.s3(?:[.-][a-z0-9-]+)?\.amazonaws\.com$",),
+        "header_patterns": {"server": (r"amazons3",)},
         "fingerprints": ("the specified bucket does not exist", "<code>nosuchbucket</code>"),
-        "severity": "critical",
+        "severity": "high",
         "verdict": "takeover_vulnerable",
         "confidence": 95,
     },
@@ -137,6 +138,7 @@ TAKEOVER_SIGNATURES = (
     {
         "provider": "GitHub Pages",
         "cname_patterns": (r"\.github\.io$",),
+        "header_patterns": {"server": (r"github\.com",)},
         "fingerprints": ("there isn't a github pages site here.",),
         "severity": "high",
         "verdict": "dangling_dns",
@@ -145,6 +147,10 @@ TAKEOVER_SIGNATURES = (
     {
         "provider": "Heroku",
         "cname_patterns": (r"\.herokuapp\.com$",),
+        "header_patterns": {
+            "server": (r"heroku", r"cowboy"),
+            "via": (r"vegur",),
+        },
         "fingerprints": ("no such app",),
         "severity": "high",
         "verdict": "dangling_dns",
@@ -153,6 +159,10 @@ TAKEOVER_SIGNATURES = (
     {
         "provider": "Netlify",
         "cname_patterns": (r"\.(?:netlify\.app|netlify\.com)$",),
+        "header_patterns": {
+            "server": (r"netlify",),
+            "x-nf-request-id": (r".+",),
+        },
         "fingerprints": ("not found - request id:",),
         "severity": "high",
         "verdict": "dangling_dns",
@@ -161,7 +171,12 @@ TAKEOVER_SIGNATURES = (
     {
         "provider": "Shopify",
         "cname_patterns": (r"\.myshopify\.com$",),
-        "fingerprints": ("sorry, this shop is currently unavailable.",),
+        "header_patterns": {
+            "powered-by": (r"shopify",),
+            "x-shopid": (r".+",),
+            "x-shopify-stage": (r".+",),
+        },
+        "fingerprints": ("sorry, this shop is currently unavailable.", "store unavailable"),
         "severity": "high",
         "verdict": "dangling_dns",
         "confidence": 85,
@@ -177,6 +192,10 @@ TAKEOVER_SIGNATURES = (
     {
         "provider": "Vercel",
         "cname_patterns": (r"\.(?:vercel\.app|vercel-dns\.com)$",),
+        "header_patterns": {
+            "server": (r"vercel",),
+            "x-vercel-error": (r"deployment_not_found",),
+        },
         "fingerprints": ("deployment_not_found",),
         "severity": "high",
         "verdict": "dangling_dns",
@@ -192,6 +211,38 @@ TAKEOVER_SIGNATURES = (
     },
 )
 
+# Branded vendor landing/error pages that identify a provider but do not, by
+# themselves, indicate an unclaimed or takeover-capable resource.
+VENDOR_DEFAULT_PAGE_SIGNATURES = (
+    {
+        "provider": "Permutive",
+        "cname_patterns": (r"\.customer\.permutive\.app$",),
+        "fingerprints": (
+            "it is not here.",
+            "whatever you are looking for, this is not it!",
+            "don't need to try again.",
+            "permutive.",
+        ),
+        "confidence": 80,
+    },
+)
+
+# Only retain non-sensitive headers that can help identify a hosting provider.
+# In particular, never persist Set-Cookie or authorization-related headers.
+PROVIDER_EVIDENCE_HEADERS = {
+    "powered-by",
+    "server",
+    "via",
+    "x-amz-error-code",
+    "x-azure-ref",
+    "x-nf-request-id",
+    "x-shopid",
+    "x-shopify-stage",
+    "x-vercel-error",
+}
+
+REVIEW_HTTP_STATUSES = {402, 404, 410, 421, 451}
+
 # Known organization-controlled authentication destinations. Keep this list
 # hostname-specific: trusting all of okta.com/oktapreview.com would allow an
 # unrelated tenant to hide a malicious redirect.
@@ -206,6 +257,7 @@ CLOUD_CNAME_PATTERNS = [
     (r"\.azurewebsites\.net$", "Azure Web Apps"),
     (r"\.azureedge\.net$", "Azure CDN"),
     (r"\.cloudfront\.net$", "AWS CloudFront"),
+    (r"\.customer\.permutive\.app$", "Permutive"),
     (r"\.herokuapp\.com$", "Heroku"),
     (r"\.github\.io$", "GitHub Pages"),
     (r"\.netlify\.app$", "Netlify"),
@@ -410,7 +462,7 @@ def resolve_dns(domain: str) -> dict:
 
 async def fetch_http(domain: str) -> dict:
     result = {"attempted": False, "status": None, "title": None,
-              "body_snippet": "", "url": None, "error": None}
+              "body_snippet": "", "headers": {}, "url": None, "error": None}
     errors = []
     for scheme in ["https", "http"]:
         requested_url = f"{scheme}://{domain}"
@@ -422,6 +474,11 @@ async def fetch_http(domain: str) -> dict:
                                         headers={"User-Agent": "Mozilla/5.0"})
                 result["status"] = resp.status_code
                 result["url"] = str(resp.url)
+                result["headers"] = {
+                    name: resp.headers[name][:300]
+                    for name in PROVIDER_EVIDENCE_HEADERS
+                    if name in resp.headers
+                }
                 body = resp.text[:3000]
                 result["body_snippet"] = body
                 title_match = re.search(r"<title[^>]*>(.*?)</title>", body, re.IGNORECASE | re.DOTALL)
@@ -439,6 +496,7 @@ def rule_based_analysis(domain: str, dns_info: dict, http_info: dict) -> dict:
     verdict = "clean"
     severity = "info"
     provider = None
+    provider_evidence = None
     reason = "No issues detected"
     confidence = 0
 
@@ -454,6 +512,10 @@ def rule_based_analysis(domain: str, dns_info: dict, http_info: dict) -> dict:
     ):
         verdict = "inactive"
         reason = "Hostname has no A, AAAA, or CNAME answer — no active web DNS target was found"
+    elif dns_info.get("resolves") is False and dns_info.get("query_errors"):
+        verdict = "scan_error"
+        severity = "info"
+        reason = "DNS queries failed; the hostname could not be classified reliably"
 
     # Check CNAME points to known cloud provider
     cname = dns_info.get("cname_target", "") or ""
@@ -461,6 +523,7 @@ def rule_based_analysis(domain: str, dns_info: dict, http_info: dict) -> dict:
     for pattern, prov in CLOUD_CNAME_PATTERNS:
         if re.search(pattern, cname, re.IGNORECASE):
             provider = prov
+            provider_evidence = f"Identified from CNAME: {cname}"
             if cname_target_nxdomain:
                 verdict = "dangling_dns"
                 severity = "high"
@@ -474,29 +537,107 @@ def rule_based_analysis(domain: str, dns_info: dict, http_info: dict) -> dict:
         reason = f"CNAME exists, but its target ({cname}) returns NXDOMAIN"
         confidence = 85
 
-    # Check provider-scoped HTTP takeover signatures.
+    # Check provider-scoped HTTP failure signatures. CNAME identity remains
+    # supported, while A/AAAA-backed sites can be identified using a limited
+    # set of safe provider response headers.
     body = (http_info.get("body_snippet") or "").lower()
+    title = (http_info.get("title") or "").lower()
+    response_text = f"{title}\n{body}"
+    response_headers = {
+        str(name).lower(): str(value).lower()
+        for name, value in (http_info.get("headers") or {}).items()
+    }
     for signature in TAKEOVER_SIGNATURES:
         cname_matches = any(
             re.search(pattern, cname, re.IGNORECASE)
             for pattern in signature["cname_patterns"]
         )
+        header_matches = []
+        for header_name, patterns in signature.get("header_patterns", {}).items():
+            header_value = response_headers.get(header_name, "")
+            if header_value and any(
+                re.search(pattern, header_value, re.IGNORECASE)
+                for pattern in patterns
+            ):
+                header_matches.append(f"{header_name}={header_value[:80]}")
+
+        provider_identity_matches = cname_matches or bool(header_matches)
         fingerprints = signature["fingerprints"]
         if signature.get("match_all"):
-            body_matches = all(fingerprint in body for fingerprint in fingerprints)
+            body_matches = all(fingerprint in response_text for fingerprint in fingerprints)
         else:
-            body_matches = any(fingerprint in body for fingerprint in fingerprints)
+            body_matches = any(fingerprint in response_text for fingerprint in fingerprints)
 
-        if cname_matches and body_matches:
-            verdict = signature["verdict"]
+        if provider_identity_matches and body_matches:
+            verdict = (
+                signature["verdict"]
+                if cname_matches
+                else "provider_resource_risk"
+            )
             severity = signature["severity"]
             provider = signature["provider"]
+            provider_evidence = (
+                f"Identified from CNAME: {cname}"
+                if cname_matches
+                else "Identified from HTTP header: " + ", ".join(header_matches)
+            )
             reason = (
-                f"Provider-specific takeover fingerprint detected for {provider}; "
-                f"manual ownership validation is required"
+                f"Provider-specific unavailable-resource fingerprint detected for {provider}; "
+                "manual ownership validation is required"
             )
             confidence = signature["confidence"]
             break
+
+        # Keep provider identity as evidence even when its exact failure page
+        # is absent. This alone is not enough to create a High finding.
+        if provider is None and header_matches:
+            provider = signature["provider"]
+            provider_evidence = "Identified from HTTP header: " + ", ".join(header_matches)
+
+    if verdict == "clean":
+        for signature in VENDOR_DEFAULT_PAGE_SIGNATURES:
+            cname_matches = any(
+                re.search(pattern, cname, re.IGNORECASE)
+                for pattern in signature["cname_patterns"]
+            )
+            page_matches = all(
+                fingerprint in response_text
+                for fingerprint in signature["fingerprints"]
+            )
+            if cname_matches and page_matches:
+                provider = signature["provider"]
+                provider_evidence = f"Identified from CNAME and branded page: {cname}"
+                verdict = "vendor_default_page"
+                severity = "info"
+                reason = (
+                    f"{provider}-branded default page returned HTTP "
+                    f"{http_info.get('status')}; no dangling or takeover fingerprint was detected"
+                )
+                confidence = signature["confidence"]
+                break
+
+    status = http_info.get("status")
+    review_http_failure = status in REVIEW_HTTP_STATUSES or (
+        isinstance(status, int) and status >= 500
+    )
+    if verdict == "clean" and review_http_failure:
+        verdict = "provider_service_error" if provider else "http_observation"
+        severity = "medium" if provider else "info"
+        reason = (
+            f"{provider} returned HTTP {status}; manual service validation is required"
+            if provider
+            else f"Generic HTTP {status} response observed without provider risk evidence"
+        )
+        confidence = 60 if provider else 20
+    elif (
+        verdict == "clean"
+        and dns_info.get("resolves")
+        and http_info.get("attempted")
+        and status is None
+    ):
+        verdict = "scan_error"
+        severity = "info"
+        reason = "HTTP checks failed; the hostname could not be classified reliably"
 
     # A resolving hostname can still be compromised or abandoned. Flag an
     # unexpected redirect to an unrelated hostname instead of treating the
@@ -543,6 +684,7 @@ def rule_based_analysis(domain: str, dns_info: dict, http_info: dict) -> dict:
         "verdict": verdict,
         "severity": severity,
         "provider": provider,
+        "provider_evidence": provider_evidence,
         "reason": reason,
         "confidence": confidence,
     }
@@ -889,7 +1031,7 @@ async def scan_domain(domain: str, use_ai: bool = True) -> dict:
 
     # HTTP fetch (skip if NXDOMAIN)
     http_info = {"attempted": False, "status": None, "title": None,
-                 "body_snippet": "", "url": None,
+                 "body_snippet": "", "headers": {}, "url": None,
                  "error": "Not attempted because DNS did not resolve"}
     if not dns_info["nxdomain"] and dns_info["resolves"]:
         http_info = await fetch_http(domain)
@@ -909,14 +1051,10 @@ async def scan_domain(domain: str, use_ai: bool = True) -> dict:
         "verdict": rule_result["verdict"],
         "severity": rule_result["severity"],
         "provider": rule_result["provider"],
-        "provider_evidence": (
-            f"Identified from CNAME: {dns_info['cname_target']}"
-            if rule_result["provider"]
-            else (
-                "No CNAME record; provider identification is not applicable"
-                if not dns_info["cname_target"]
-                else "CNAME does not match a provider in the takeover-signature database"
-            )
+        "provider_evidence": rule_result.get("provider_evidence") or (
+            "No provider identity matched the DNS or HTTP evidence"
+            if not dns_info["cname_target"]
+            else "CNAME does not match a provider in the takeover-signature database"
         ),
         "reason": rule_result["reason"],
         "confidence": rule_result["confidence"],
@@ -938,6 +1076,7 @@ async def scan_domain(domain: str, use_ai: bool = True) -> dict:
             "title": http_info["title"],
             "url": http_info.get("url"),
             "error": http_info.get("error"),
+            "provider_headers": http_info.get("headers", {}),
         },
         "scan_time_s": elapsed,
     }

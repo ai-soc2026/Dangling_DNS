@@ -97,6 +97,235 @@ class DnsClassificationTests(unittest.TestCase):
         self.assertEqual(analysis["severity"], "critical")
         self.assertEqual(analysis["confidence"], 90)
 
+    def test_shopify_failure_on_direct_a_record_is_high(self):
+        analysis = main.rule_based_analysis(
+            "merch.pitchfork.com",
+            {
+                "nxdomain": False,
+                "resolves": True,
+                "record_types": ["A"],
+                "a_records": ["23.227.38.32"],
+                "query_errors": {},
+                "cname_target": "",
+                "cname_target_nxdomain": False,
+            },
+            {
+                "attempted": True,
+                "status": 402,
+                "url": "https://merch.pitchfork.com",
+                "title": "Store unavailable",
+                "body_snippet": "",
+                "headers": {"powered-by": "Shopify"},
+            },
+        )
+
+        self.assertEqual(analysis["verdict"], "provider_resource_risk")
+        self.assertEqual(analysis["severity"], "high")
+        self.assertEqual(analysis["provider"], "Shopify")
+        self.assertEqual(analysis["confidence"], 85)
+        self.assertIn("HTTP header", analysis["provider_evidence"])
+
+    def test_healthy_shopify_direct_a_record_stays_clean(self):
+        analysis = main.rule_based_analysis(
+            "shop.example.com",
+            {
+                "nxdomain": False,
+                "resolves": True,
+                "record_types": ["A"],
+                "query_errors": {},
+                "cname_target": "",
+                "cname_target_nxdomain": False,
+            },
+            {
+                "attempted": True,
+                "status": 200,
+                "url": "https://shop.example.com",
+                "title": "Example Store",
+                "body_snippet": "Welcome to our store",
+                "headers": {"powered-by": "Shopify"},
+            },
+        )
+
+        self.assertEqual(analysis["verdict"], "clean")
+        self.assertEqual(analysis["severity"], "info")
+        self.assertEqual(analysis["provider"], "Shopify")
+
+    def test_heroku_failure_on_direct_a_record_is_high(self):
+        analysis = main.rule_based_analysis(
+            "app.example.com",
+            {
+                "nxdomain": False,
+                "resolves": True,
+                "record_types": ["A"],
+                "query_errors": {},
+                "cname_target": "",
+                "cname_target_nxdomain": False,
+            },
+            {
+                "attempted": True,
+                "status": 404,
+                "url": "https://app.example.com",
+                "title": "No such app",
+                "body_snippet": "No such app",
+                "headers": {"via": "1.1 vegur"},
+            },
+        )
+
+        self.assertEqual(analysis["verdict"], "provider_resource_risk")
+        self.assertEqual(analysis["severity"], "high")
+        self.assertEqual(analysis["provider"], "Heroku")
+
+    def test_generic_http_failure_is_info_not_medium(self):
+        analysis = main.rule_based_analysis(
+            "broken.example.com",
+            {
+                "nxdomain": False,
+                "resolves": True,
+                "record_types": ["A"],
+                "query_errors": {},
+                "cname_target": "",
+                "cname_target_nxdomain": False,
+            },
+            {
+                "attempted": True,
+                "status": 404,
+                "url": "https://broken.example.com",
+                "title": "Not Found",
+                "body_snippet": "Not Found",
+                "headers": {},
+            },
+        )
+
+        self.assertEqual(analysis["verdict"], "http_observation")
+        self.assertEqual(analysis["severity"], "info")
+
+    def test_identified_provider_generic_failure_is_medium(self):
+        analysis = main.rule_based_analysis(
+            "maintenance.example.com",
+            {
+                "nxdomain": False,
+                "resolves": True,
+                "record_types": ["A"],
+                "query_errors": {},
+                "cname_target": "",
+                "cname_target_nxdomain": False,
+            },
+            {
+                "attempted": True,
+                "status": 500,
+                "url": "https://maintenance.example.com",
+                "title": "Maintenance",
+                "body_snippet": "Please try again later",
+                "headers": {"powered-by": "Shopify"},
+            },
+        )
+
+        self.assertEqual(analysis["verdict"], "provider_service_error")
+        self.assertEqual(analysis["severity"], "medium")
+        self.assertEqual(analysis["provider"], "Shopify")
+
+    def test_cloudfront_generic_503_is_medium_service_error(self):
+        analysis = main.rule_based_analysis(
+            "media.pitchfork.com",
+            {
+                "nxdomain": False,
+                "resolves": True,
+                "record_types": ["CNAME", "A"],
+                "query_errors": {},
+                "cname_target": "d2zm5qiurbqbji.cloudfront.net",
+                "cname_target_nxdomain": False,
+            },
+            {
+                "attempted": True,
+                "status": 503,
+                "url": "https://media.pitchfork.com",
+                "title": "ERROR: The request could not be satisfied",
+                "body_snippet": "The request could not be satisfied.",
+                "headers": {},
+            },
+        )
+
+        self.assertEqual(analysis["verdict"], "provider_service_error")
+        self.assertEqual(analysis["severity"], "medium")
+        self.assertEqual(analysis["provider"], "AWS CloudFront")
+
+    def test_permutive_branded_default_page_is_info(self):
+        analysis = main.rule_based_analysis(
+            "permutive.pitchfork.com",
+            {
+                "nxdomain": False,
+                "resolves": True,
+                "record_types": ["CNAME", "A"],
+                "query_errors": {},
+                "cname_target": "tbipw9d1vxkk.customer.permutive.app",
+                "cname_target_nxdomain": False,
+            },
+            {
+                "attempted": True,
+                "status": 404,
+                "url": "https://permutive.pitchfork.com",
+                "title": "Nope!",
+                "body_snippet": (
+                    "It is not here. Whatever you are looking for, this is not it! "
+                    "Don't need to try again. Permutive."
+                ),
+                "headers": {},
+            },
+        )
+
+        self.assertEqual(analysis["verdict"], "vendor_default_page")
+        self.assertEqual(analysis["severity"], "info")
+        self.assertEqual(analysis["provider"], "Permutive")
+        self.assertEqual(analysis["confidence"], 80)
+
+    def test_s3_missing_bucket_signature_is_high_not_critical(self):
+        analysis = main.rule_based_analysis(
+            "assets.example.com",
+            {
+                "nxdomain": False,
+                "resolves": True,
+                "record_types": ["CNAME", "A"],
+                "query_errors": {},
+                "cname_target": "missing-bucket.s3.amazonaws.com",
+                "cname_target_nxdomain": False,
+            },
+            {
+                "attempted": True,
+                "status": 404,
+                "url": "https://assets.example.com",
+                "title": "NoSuchBucket",
+                "body_snippet": "<Code>NoSuchBucket</Code> The specified bucket does not exist",
+                "headers": {"server": "AmazonS3"},
+            },
+        )
+
+        self.assertEqual(analysis["verdict"], "takeover_vulnerable")
+        self.assertEqual(analysis["severity"], "high")
+
+    def test_dns_query_failure_is_scan_error_not_clean(self):
+        analysis = main.rule_based_analysis(
+            "unclassified.example.com",
+            {
+                "nxdomain": False,
+                "resolves": False,
+                "record_types": [],
+                "query_errors": {"A": "SERVFAIL / no nameservers available"},
+                "cname_target": "",
+                "cname_target_nxdomain": False,
+            },
+            {
+                "attempted": False,
+                "status": None,
+                "url": None,
+                "title": None,
+                "body_snippet": "",
+                "headers": {},
+            },
+        )
+
+        self.assertEqual(analysis["verdict"], "scan_error")
+        self.assertEqual(analysis["severity"], "info")
+
     def test_nodata_without_web_records_is_not_resolving(self):
         analysis = main.rule_based_analysis(
             "empty.example.com",

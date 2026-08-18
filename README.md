@@ -127,10 +127,11 @@ deployment has been validated.
 - Merges discovered subdomains with domains from the uploaded Excel file before scanning
 
 ### Severity scoring
-- **Critical**: Confirmed takeover signature in HTTP body
-- **Critical**: Redirect to an unrelated external domain unless it is the built-in Condé Nast Okta tenant or is allowlisted with `REDIRECT_DOMAIN_ALLOWLIST`
-- **High**: Dangling CNAME, CNAME-target NXDOMAIN, or an unclaimed-provider fingerprint
-- **Medium**: HTTP 404/410 on cloud-pointed domain
+- **Critical**: Live redirect to an unrelated external domain unless it is the built-in Condé Nast Okta tenant or is allowlisted with `REDIRECT_DOMAIN_ALLOWLIST`
+- **High**: Dangling CNAME, CNAME-target NXDOMAIN, or an exact provider missing/unavailable-resource fingerprint confirmed by CNAME or safe HTTP-header identity evidence
+- **Medium**: Identified provider service failure without an exact takeover fingerprint
+- **Info**: Generic HTTP failure without provider risk evidence or a recognized branded vendor default page
+- **Scan Error / Info**: DNS/HTTP evidence collection failed; the result is not treated as Clean
 - **Not Resolving**: NXDOMAIN or no usable A, AAAA or CNAME web target (stored internally as `inactive`)
 - **Clean**: Domain resolves and no issues found
 

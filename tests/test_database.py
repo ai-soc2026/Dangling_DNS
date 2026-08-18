@@ -77,6 +77,32 @@ def healthy_result(domain: str) -> dict:
 
 
 class DatabaseTests(unittest.TestCase):
+    def test_info_result_uses_info_count_not_clean_count(self) -> None:
+        scan_id = db.create_scan(
+            input_type="domain",
+            input_value="broken.example.com",
+            source_domains=["broken.example.com"],
+            use_ai=False,
+            use_enum=False,
+        )
+        result = sample_result(
+            "broken.example.com",
+            verdict="http_observation",
+            severity="info",
+        )
+        result["reason"] = "HTTP 404 response requires manual validation"
+        db.save_scan_result(
+            scan_id,
+            result,
+            completed_count=1,
+            total_count=1,
+        )
+
+        scan = db.get_scan(scan_id)
+        self.assertEqual(scan["info_count"], 1)
+        self.assertEqual(scan["clean_count"], 0)
+        self.assertEqual(scan["inactive_count"], 0)
+
     def test_resolved_previous_finding_does_not_trigger_historical_alert(self) -> None:
         previous_evidence = sample_result("resolved-transition.example.com")
         previous = {

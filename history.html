@@ -144,7 +144,7 @@ tbody tr:hover { background:rgba(0,212,255,.035); }
     </div>
     <div class="toolbar">
       <input id="result-search" type="search" placeholder="Search this scan's evidence..."/>
-      <select id="result-category"><option value="">Any result category</option><option value="suspicious_redirect">Suspicious redirect</option><option value="ownership_validation_required">Ownership validation required</option><option value="takeover_vulnerable">Takeover candidate</option><option value="dangling_dns">Dangling DNS</option><option value="inactive">Not Resolving</option><option value="clean">Clean</option></select>
+      <select id="result-category"><option value="">Any result category</option><option value="suspicious_redirect">Suspicious redirect</option><option value="provider_resource_risk">Provider resource risk</option><option value="provider_service_error">Provider service error</option><option value="vendor_default_page">Vendor default page</option><option value="http_observation">HTTP observation</option><option value="scan_error">Scan error</option><option value="ownership_validation_required">Ownership validation required</option><option value="takeover_vulnerable">Takeover candidate</option><option value="dangling_dns">Dangling DNS</option><option value="inactive">Not Resolving</option><option value="clean">Clean</option></select>
       <button class="button primary" type="button" onclick="loadSelectedScanResults()">Run Filter</button>
     </div>
     <div class="table-wrap">
@@ -202,7 +202,7 @@ function dateLabel(value) {
 }
 
 function verdictLabel(value) {
-  return {clean:'Clean',inactive:'Not Resolving',dangling_dns:'Dangling DNS',takeover_vulnerable:'Takeover candidate',suspicious_redirect:'Suspicious Redirect',ownership_validation_required:'Ownership validation required'}[value] || value || 'Unknown';
+  return {clean:'Clean',inactive:'Not Resolving',dangling_dns:'Dangling DNS',takeover_vulnerable:'Takeover candidate',suspicious_redirect:'Suspicious Redirect',provider_resource_risk:'Provider Resource Risk',provider_service_error:'Provider Service Error',vendor_default_page:'Vendor Default Page',http_observation:'HTTP Observation',scan_error:'Scan Error',ownership_validation_required:'Ownership validation required'}[value] || value || 'Unknown';
 }
 
 function showError(message) {
@@ -270,7 +270,7 @@ async function loadScans() {
         <td>${esc(dateLabel(scan.started_at))}<span class="subtext">${scan.completed_at ? `Ended ${esc(dateLabel(scan.completed_at))}` : 'In progress'}</span></td>
         <td><span class="status status-${esc(scan.status)}">${esc(scan.status)}</span></td>
         <td>${scan.completed_count} / ${scan.total_count || scan.input_total}<span class="subtext">${scan.discovered_count} discovered</span></td>
-        <td class="counts"><span class="count-risk">${risks} risk</span> · <span class="count-inactive">${scan.inactive_count} not resolving</span> · <span class="count-clean">${scan.clean_count} clean</span></td>
+        <td class="counts"><span class="count-risk">${risks} risk</span> · <span class="count-inactive">${scan.info_count || 0} info</span> · <span class="count-inactive">${scan.inactive_count} not resolving</span> · <span class="count-clean">${scan.clean_count} clean</span></td>
         <td><button class="button" type="button" onclick="selectScan(decodeURIComponent('${encodeURIComponent(scan.id)}'),decodeURIComponent('${encodeURIComponent(scan.input_value)}'))">View Results</button></td>
       </tr>`;
     }).join('');
