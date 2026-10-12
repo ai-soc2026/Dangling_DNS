@@ -8,13 +8,13 @@
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500&display=swap" rel="stylesheet"/>
 <style>
 :root {
-  --bg: #0a0c0f;
-  --surface: #111418;
-  --surface2: #181c22;
-  --border: #1e242d;
-  --border2: #252c38;
-  --text: #c8d4e0;
-  --muted: #5a6677;
+  --bg: #080b0f;
+  --surface: #10151b;
+  --surface2: #171e27;
+  --border: #1d2732;
+  --border2: #2a3745;
+  --text: #d5e0eb;
+  --muted: #718094;
   --accent: #00d4ff;
   --accent-dim: rgba(0,212,255,0.08);
   --critical: #ff4757;
@@ -29,7 +29,10 @@
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 body {
-  background: var(--bg);
+  background:
+    radial-gradient(circle at 18% -10%, rgba(0,212,255,0.08), transparent 34%),
+    radial-gradient(circle at 88% 16%, rgba(78,205,196,0.045), transparent 28%),
+    var(--bg);
   color: var(--text);
   font-family: var(--font-sans);
   font-size: 14px;
@@ -61,8 +64,15 @@ header {
   justify-content: space-between;
   position: sticky;
   top: 0;
-  background: var(--bg);
+  background: rgba(8,11,15,0.92);
+  backdrop-filter: blur(14px);
   z-index: 100;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
 }
 
 .logo {
@@ -75,6 +85,15 @@ header {
 
 .logo span { color: var(--muted); font-weight: 400; }
 
+.brand-copy {
+  padding-left: 14px;
+  border-left: 1px solid var(--border2);
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.35;
+}
+
 #ai-status {
   font-family: var(--font-mono);
   font-size: 11px;
@@ -82,7 +101,30 @@ header {
   align-items: center;
   gap: 6px;
   color: var(--muted);
+  border: 1px solid var(--border);
+  background: rgba(16,21,27,0.8);
+  border-radius: 999px;
+  padding: 6px 10px;
 }
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.history-link {
+  padding: 7px 12px;
+  border: 1px solid var(--border2);
+  border-radius: 4px;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-decoration: none;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.history-link:hover { border-color: var(--accent); color: var(--accent); }
 
 .dot {
   width: 7px; height: 7px;
@@ -93,12 +135,74 @@ header {
 .dot.ok { background: var(--clean); box-shadow: 0 0 6px var(--clean); }
 .dot.err { background: var(--critical); }
 
-main { max-width: 1200px; margin: 0 auto; padding: 40px 32px; }
+main { max-width: 1400px; margin: 0 auto; padding: 44px 32px 80px; }
+
+.page-intro {
+  max-width: 820px;
+  margin-bottom: 28px;
+}
+
+.page-eyebrow {
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+
+.page-intro h1 {
+  color: #edf6ff;
+  font-family: var(--font-sans);
+  font-size: clamp(28px, 4vw, 44px);
+  font-weight: 500;
+  line-height: 1.12;
+  letter-spacing: -1.2px;
+}
+
+.page-intro p {
+  max-width: 720px;
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.scanner-card {
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(16,21,27,0.78);
+  box-shadow: 0 18px 60px rgba(0,0,0,0.24);
+}
+
+.input-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 16px;
+}
+
+.step-label {
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.4px;
+}
+
+.step-label span {
+  color: var(--accent);
+  margin-right: 7px;
+}
 
 .input-mode-tabs {
   display: flex;
-  gap: 6px;
-  margin-bottom: 16px;
+  gap: 4px;
+  margin-bottom: 0;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg);
 }
 
 .mode-btn {
@@ -106,8 +210,8 @@ main { max-width: 1200px; margin: 0 auto; padding: 40px 32px; }
   font-size: 12px;
   padding: 8px 14px;
   border-radius: 4px;
-  border: 1px solid var(--border2);
-  background: var(--surface);
+  border: 1px solid transparent;
+  background: transparent;
   color: var(--muted);
   cursor: pointer;
 }
@@ -118,14 +222,16 @@ main { max-width: 1200px; margin: 0 auto; padding: 40px 32px; }
   color: var(--accent);
 }
 
+.mode-btn:hover:not(.active) { color: var(--text); }
+
 .domain-entry {
   display: none;
   gap: 12px;
   align-items: center;
   padding: 32px;
   border: 1px solid var(--border2);
-  border-radius: 8px;
-  background: var(--surface);
+  border-radius: 7px;
+  background: rgba(8,11,15,0.72);
 }
 
 .domain-entry.visible { display: flex; }
@@ -158,7 +264,7 @@ main { max-width: 1200px; margin: 0 auto; padding: 40px 32px; }
   text-align: center;
   cursor: pointer;
   transition: all 0.2s;
-  background: var(--surface);
+  background: rgba(8,11,15,0.72);
   position: relative;
   overflow: hidden;
 }
@@ -201,11 +307,11 @@ main { max-width: 1200px; margin: 0 auto; padding: 40px 32px; }
 .upload-zone p { color: var(--muted); font-size: 13px; }
 
 .controls {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  margin-top: 20px;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(220px, 1fr) auto;
+  align-items: stretch;
+  gap: 10px;
+  margin-top: 16px;
 }
 
 .file-badge {
@@ -232,6 +338,45 @@ main { max-width: 1200px; margin: 0 auto; padding: 40px 32px; }
   color: var(--muted);
   cursor: pointer;
   user-select: none;
+}
+
+.option-card {
+  min-height: 72px;
+  padding: 12px 13px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: rgba(8,11,15,0.66);
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.option-card:hover { border-color: var(--border2); }
+.option-card.disabled { opacity: 0.55; }
+.option-card.disabled .ai-toggle { cursor: not-allowed; }
+
+.option-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.option-title {
+  color: var(--text);
+  font-size: 11px;
+}
+
+.option-note {
+  color: var(--muted);
+  font-family: var(--font-sans);
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.scan-actions {
+  min-width: 132px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
 }
 
 .toggle-switch {
@@ -268,11 +413,13 @@ main { max-width: 1200px; margin: 0 auto; padding: 40px 32px; }
   background: var(--accent);
   color: var(--bg);
   border: none;
-  padding: 10px 28px;
+  padding: 8px 20px;
   border-radius: 4px;
   cursor: pointer;
   transition: all 0.15s;
-  margin-left: auto;
+  margin-left: 0;
+  min-height: 36px;
+  flex: 0 0 auto;
 }
 
 .scan-btn:hover { background: #33ddff; transform: translateY(-1px); }
@@ -329,7 +476,7 @@ main { max-width: 1200px; margin: 0 auto; padding: 40px 32px; }
 /* Stats row */
 #stats-row {
   display: none;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(6, 1fr);
   gap: 12px;
   margin-top: 28px;
 }
@@ -339,7 +486,22 @@ main { max-width: 1200px; margin: 0 auto; padding: 40px 32px; }
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 16px;
+  color: inherit;
+  font: inherit;
   text-align: center;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.02);
+  cursor: pointer;
+  transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+
+.stat-card:hover { transform: translateY(-2px); border-color: var(--border2); }
+.stat-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.stat-card.active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-dim), inset 0 1px 0 rgba(255,255,255,0.03);
 }
 
 .stat-card .num {
@@ -361,6 +523,8 @@ main { max-width: 1200px; margin: 0 auto; padding: 40px 32px; }
 .stat-card.critical .num { color: var(--critical); }
 .stat-card.high .num { color: var(--high); }
 .stat-card.medium .num { color: var(--medium); }
+.stat-card.configuration .num { color: var(--info); }
+.stat-card.inactive .num { color: var(--info); }
 .stat-card.clean .num { color: var(--clean); }
 .stat-card.total .num { color: var(--accent); }
 
@@ -404,13 +568,176 @@ main { max-width: 1200px; margin: 0 auto; padding: 40px 32px; }
 .ftab:hover { border-color: var(--border2); color: var(--text); }
 .ftab.active { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
 
+.results-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.visible-count {
+  color: var(--accent);
+  font-size: 10px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.results-actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.filter-panel {
+  padding: 14px;
+  background: linear-gradient(180deg, rgba(18,22,28,0.9), rgba(13,16,21,0.9));
+  border: 1px solid var(--border);
+  border-top: 0;
+}
+
+.filter-toolbar {
+  display: grid;
+  grid-template-columns: minmax(260px, 1.8fr) minmax(170px, 0.7fr) auto auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.filter-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(150px, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.filter-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.filter-field label,
+.filter-group-label {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+}
+
+.filter-field input[type="search"],
+.filter-field select {
+  width: 100%;
+  min-height: 34px;
+  padding: 7px 9px;
+  border: 1px solid var(--border2);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  outline: none;
+}
+
+.filter-field input[type="search"]:focus,
+.filter-field select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-dim);
+}
+
+.filter-field select {
+  cursor: pointer;
+}
+
+.severity-filter {
+  margin-top: 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.filter-note {
+  margin-top: 10px;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  line-height: 1.5;
+}
+
+.reset-filter-btn {
+  min-height: 34px;
+  padding: 7px 12px;
+  border: 1px solid var(--border2);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.reset-filter-btn:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.apply-filter-btn {
+  min-height: 34px;
+  padding: 7px 16px;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  background: var(--accent);
+  color: #071016;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.apply-filter-btn:hover { filter: brightness(1.08); }
+.apply-filter-btn.pending {
+  box-shadow: 0 0 0 3px var(--accent-dim);
+  animation: scan-pulse 1.2s ease-in-out infinite;
+}
+
+.filter-note.pending { color: var(--medium); }
+
+.filter-empty-state {
+  display: none;
+  padding: 28px 14px;
+  color: var(--muted);
+  text-align: center;
+  border-bottom: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  white-space: normal;
+}
+
+@media (max-width: 980px) {
+  .filter-grid { grid-template-columns: repeat(2, minmax(150px, 1fr)); }
+}
+
+@media (max-width: 680px) {
+  .section-header { align-items: flex-start; gap: 12px; }
+  .filter-toolbar,
+  .filter-grid { grid-template-columns: 1fr; }
+  .results-actions { justify-content: flex-start; }
+}
+
 #results-table-wrap {
   overflow-x: auto;
   margin-top: 0;
+  border: 1px solid var(--border);
+  border-top: 0;
+  border-radius: 0 0 8px 8px;
+  background: rgba(8,11,15,0.48);
 }
 
 table {
   width: 100%;
+  min-width: 1180px;
   border-collapse: collapse;
   font-family: var(--font-mono);
   font-size: 12px;
@@ -418,6 +745,7 @@ table {
 
 thead tr {
   border-bottom: 1px solid var(--border2);
+  background: #0e141b;
 }
 
 th {
@@ -428,6 +756,7 @@ th {
   font-weight: 500;
   letter-spacing: 0.5px;
   white-space: nowrap;
+  background: #0e141b;
 }
 
 tbody tr {
@@ -446,6 +775,17 @@ td {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.evidence-main { color: var(--text); font-size: 11px; }
+.evidence-sub {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 9px;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .sev-badge {
@@ -468,6 +808,26 @@ td {
   font-size: 10px;
   color: var(--muted);
   font-style: normal;
+}
+
+@media (max-width: 820px) {
+  header { padding: 14px 18px; }
+  .brand-copy { display: none; }
+  #ai-status { max-width: 58%; font-size: 9px; }
+  .header-actions { gap: 8px; }
+  .history-link { padding: 6px 8px; font-size: 9px; }
+  main { padding: 30px 18px 60px; }
+  .page-intro h1 { letter-spacing: -0.6px; }
+  .scanner-card { padding: 14px; }
+  .input-header { align-items: flex-start; flex-direction: column; }
+  .domain-entry { padding: 18px; align-items: stretch; flex-direction: column; }
+  .domain-entry span { white-space: normal !important; }
+  .upload-zone { padding: 34px 20px; }
+  .controls { grid-template-columns: 1fr; }
+  .scan-actions { min-width: 0; flex-direction: row; }
+  .scan-btn, .stop-btn { width: 100%; }
+  #stats-row { grid-template-columns: repeat(2, 1fr) !important; }
+  .stat-card.total { grid-column: 1 / -1; }
 }
 
 /* Detail drawer */
@@ -646,59 +1006,80 @@ td {
 <body>
 
 <header>
-  <div class="logo">DangleScan<span>.io</span></div>
-  <div id="ai-status">
-    <div class="dot" id="codex-dot"></div>
-    <span id="codex-label">checking codex...</span>
+  <div class="brand">
+    <div class="logo">DangleScan<span>.io</span></div>
+    <div class="brand-copy">DNS evidence<br/>and takeover triage</div>
+  </div>
+  <div class="header-actions">
+    <a class="history-link" id="history-link" href="history.html">Scan History</a>
+    <div id="ai-status">
+      <div class="dot" id="codex-dot"></div>
+      <span id="codex-label">checking scanner services...</span>
+    </div>
   </div>
 </header>
 
 <main>
-  <div class="input-mode-tabs">
-    <button class="mode-btn active" id="file-mode-btn" onclick="setInputMode('file')">Upload Excel</button>
-    <button class="mode-btn" id="domain-mode-btn" onclick="setInputMode('domain')">Enter Domain</button>
-  </div>
-
-  <!-- Upload -->
-  <div class="upload-zone" id="drop-zone">
-    <input type="file" id="file-input" accept=".xlsx,.xls"/>
-    <span class="upload-icon">[xlsx]</span>
-    <h2>Drop your Excel file here</h2>
-    <p>One domain per cell · any sheet · any column</p>
-  </div>
-
-  <div class="domain-entry" id="domain-entry">
-    <label for="domain-input">Domain</label>
-    <input id="domain-input" type="text" placeholder="example.com or https://subdomain.example.com" autocomplete="off"/>
-    <span style="font-size:11px;color:var(--muted);white-space:nowrap">Subdomains discovered automatically</span>
-  </div>
-
-  <div class="controls">
-    <div class="file-badge" id="file-badge">
-      <span>&#9632;</span>
-      <span id="file-name-label">—</span>
-      <span id="domain-count-label" style="color:var(--muted)"></span>
+  <section class="scanner-card" aria-label="Configure a scan">
+    <div class="input-header">
+      <div class="input-mode-tabs">
+        <button class="mode-btn active" id="file-mode-btn" onclick="setInputMode('file')">Upload Excel</button>
+        <button class="mode-btn" id="domain-mode-btn" onclick="setInputMode('domain')">Enter Domain</button>
+      </div>
     </div>
 
-    <input type="checkbox" id="ai-cb" checked/>
-    <label for="ai-cb" class="ai-toggle">
-      <div class="toggle-switch"></div>
-      <span>Codex analysis</span>
-    </label>
+    <!-- Upload -->
+    <div class="upload-zone" id="drop-zone">
+      <input type="file" id="file-input" accept=".xlsx,.xls"/>
+      <span class="upload-icon">[xlsx]</span>
+      <h2>Drop your Excel file here</h2>
+      <p>One domain per cell · any sheet · any column</p>
+    </div>
 
-    <input type="checkbox" id="enum-cb"/>
-    <label for="enum-cb" class="ai-toggle">
-      <div class="toggle-switch"></div>
-      <span>Amass/Subfinder enumeration</span>
-    </label>
+    <div class="domain-entry" id="domain-entry">
+      <label for="domain-input">Domain</label>
+      <input id="domain-input" type="text" placeholder="domain.com" autocomplete="off"/>
+    </div>
 
-    <button class="scan-btn" id="scan-btn" disabled onclick="startScan()">
-      Run Scan
-    </button>
+    <div class="controls">
+      <div class="option-card" id="ai-option">
+        <input type="checkbox" id="ai-cb"/>
+        <label for="ai-cb" class="ai-toggle" title="Adds a short AI-written review only to actionable findings. It does not perform DNS detection.">
+          <div class="toggle-switch"></div>
+          <span class="option-copy">
+            <span class="option-title">Codex analysis</span>
+            <span class="option-note" id="ai-option-note">Requires an API key; DNS detection works without it.</span>
+          </span>
+        </label>
+      </div>
 
-    <button class="stop-btn" id="stop-btn" disabled onclick="stopScan()">
-      Stop Scan
-    </button>
+      <div class="option-card" id="enum-option">
+        <input type="checkbox" id="enum-cb"/>
+        <label for="enum-cb" class="ai-toggle" title="Includes supported passive sources and locally installed Amass or Subfinder tools.">
+          <div class="toggle-switch"></div>
+          <span class="option-copy">
+            <span class="option-title">Amass/Subfinder enumeration</span>
+            <span class="option-note" id="enum-option-note">Optional for Excel scans; uses available passive and local tools.</span>
+          </span>
+        </label>
+      </div>
+
+      <div class="scan-actions">
+        <button class="scan-btn" id="scan-btn" disabled onclick="startScan()">
+          Run Scan
+        </button>
+
+        <button class="stop-btn" id="stop-btn" disabled onclick="stopScan()">
+          Stop Scan
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <div class="file-badge" id="file-badge" style="margin-top:12px">
+    <span>&#9632;</span>
+    <span id="file-name-label">—</span>
+    <span id="domain-count-label" style="color:var(--muted)"></span>
   </div>
 
   <!-- Progress -->
@@ -715,42 +1096,165 @@ td {
   </div>
 
   <!-- Stats -->
-  <div id="stats-row" style="display:none;grid-template-columns:repeat(5,1fr);gap:12px;margin-top:28px;">
-    <div class="stat-card total">
+  <div id="stats-row" style="display:none;grid-template-columns:repeat(7,1fr);gap:12px;margin-top:28px;">
+    <button type="button" class="stat-card total active" data-category="all" onclick="showCategory('all')">
       <span class="num" id="stat-total">0</span>
       <span class="lbl">Scanned</span>
-    </div>
-    <div class="stat-card critical">
+    </button>
+    <button type="button" class="stat-card critical" data-category="critical" onclick="showCategory('critical')">
       <span class="num" id="stat-critical">0</span>
       <span class="lbl">Critical</span>
-    </div>
-    <div class="stat-card high">
+    </button>
+    <button type="button" class="stat-card high" data-category="high" onclick="showCategory('high')">
       <span class="num" id="stat-high">0</span>
       <span class="lbl">High</span>
-    </div>
-    <div class="stat-card medium">
+    </button>
+    <button type="button" class="stat-card medium" data-category="medium" onclick="showCategory('medium')">
       <span class="num" id="stat-medium">0</span>
       <span class="lbl">Medium</span>
-    </div>
-    <div class="stat-card clean">
+    </button>
+    <button type="button" class="stat-card configuration" data-category="configuration_issue" onclick="showCategory('configuration_issue')">
+      <span class="num" id="stat-configuration">0</span>
+      <span class="lbl">Configuration</span>
+    </button>
+    <button type="button" class="stat-card inactive" data-category="inactive" onclick="showCategory('inactive')">
+      <span class="num" id="stat-inactive">0</span>
+      <span class="lbl">Inactive</span>
+    </button>
+    <button type="button" class="stat-card clean" data-category="clean" onclick="showCategory('clean')">
       <span class="num" id="stat-clean">0</span>
       <span class="lbl">Clean</span>
-    </div>
+    </button>
   </div>
 
   <!-- Results -->
   <div id="results-section">
     <div class="section-header" style="margin-top:28px;margin-bottom:0;">
-      <span>Findings</span>
-      <div style="display:flex;align-items:center;gap:10px;">
+      <div class="results-heading">
+        <span>Findings</span>
+        <span class="visible-count" id="visible-count">0 visible / 0 total</span>
+      </div>
+      <div class="results-actions">
+        <button class="export-btn" onclick="exportCSV('visible')">Export Visible</button>
+        <button class="export-btn" onclick="exportCSV('all')">Export All</button>
+      </div>
+    </div>
+
+    <div class="filter-panel" aria-label="Result filters">
+      <div class="filter-toolbar">
+        <div class="filter-field">
+          <label for="result-search">Search all evidence</label>
+          <input id="result-search" type="search"
+                 placeholder="Domain, CNAME, IP, provider, DNS, HTTP, finding..."
+                 autocomplete="off"/>
+        </div>
+        <div class="filter-field">
+          <label for="sort-results">Sort results</label>
+          <select id="sort-results">
+            <option value="newest">Newest result first</option>
+            <option value="oldest">Oldest result first</option>
+            <option value="severity">Highest severity first</option>
+            <option value="confidence_desc">Confidence: high to low</option>
+            <option value="confidence_asc">Confidence: low to high</option>
+            <option value="domain_asc">Domain: A to Z</option>
+            <option value="domain_desc">Domain: Z to A</option>
+            <option value="http_status">HTTP status</option>
+          </select>
+        </div>
+        <button class="apply-filter-btn" id="apply-filter-btn" type="button" onclick="runFilters()">Run Filter</button>
+        <button class="reset-filter-btn" type="button" onclick="resetFilters()">Reset</button>
+      </div>
+
+      <div class="filter-grid">
+        <div class="filter-field">
+          <label for="verdict-filter">Verdict</label>
+          <select id="verdict-filter">
+            <option value="all">Any verdict</option>
+            <option value="clean">Clean</option>
+            <option value="inactive">Inactive</option>
+            <option value="configuration_issue">Configuration Issue</option>
+            <option value="dangling_dns">Dangling DNS</option>
+            <option value="takeover_vulnerable">Takeover Risk</option>
+            <option value="ownership_validation_required">Ownership Validation Required</option>
+          </select>
+        </div>
+        <div class="filter-field">
+          <label for="dns-state-filter">DNS state</label>
+          <select id="dns-state-filter">
+            <option value="all">Any DNS state</option>
+            <option value="resolved">Resolved</option>
+            <option value="nxdomain">Queried host NXDOMAIN</option>
+            <option value="cname_target_nxdomain">CNAME target NXDOMAIN</option>
+            <option value="query_failed">Query failed / error</option>
+            <option value="no_answer">No DNS answer</option>
+          </select>
+        </div>
+        <div class="filter-field">
+          <label for="record-filter">DNS record</label>
+          <select id="record-filter">
+            <option value="all">Any record type</option>
+            <option value="cname">Has CNAME</option>
+            <option value="a">Has A record</option>
+            <option value="aaaa">Has AAAA record</option>
+            <option value="address">Has A or AAAA</option>
+            <option value="none">No CNAME/A/AAAA</option>
+          </select>
+        </div>
+        <div class="filter-field">
+          <label for="cname-filter">CNAME condition</label>
+          <select id="cname-filter">
+            <option value="all">Any CNAME condition</option>
+            <option value="present">CNAME present</option>
+            <option value="missing">CNAME missing</option>
+            <option value="target_nxdomain">Target is NXDOMAIN</option>
+          </select>
+        </div>
+        <div class="filter-field">
+          <label for="provider-state-filter">Provider condition</label>
+          <select id="provider-state-filter">
+            <option value="all">Any provider condition</option>
+            <option value="matched">Provider identified</option>
+            <option value="not_identified">CNAME provider not identified</option>
+            <option value="not_applicable">No CNAME / not applicable</option>
+          </select>
+        </div>
+        <div class="filter-field">
+          <label for="provider-filter">Specific provider</label>
+          <select id="provider-filter">
+            <option value="all">Any identified provider</option>
+          </select>
+        </div>
+        <div class="filter-field">
+          <label for="http-filter">HTTP result</label>
+          <select id="http-filter">
+            <option value="all">Any HTTP result</option>
+            <option value="responded">Response received</option>
+            <option value="2xx">2xx success</option>
+            <option value="3xx">3xx redirect</option>
+            <option value="4xx">4xx client response</option>
+            <option value="404">404 specifically</option>
+            <option value="5xx">5xx server response</option>
+            <option value="no_response">Attempted, no response</option>
+            <option value="not_attempted">Not attempted</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="severity-filter">
+        <span class="filter-group-label">Result category</span>
         <div class="filter-tabs">
           <button class="ftab active" data-filter="all" onclick="setFilter('all',this)">All</button>
           <button class="ftab" data-filter="critical" onclick="setFilter('critical',this)">Critical</button>
           <button class="ftab" data-filter="high" onclick="setFilter('high',this)">High</button>
           <button class="ftab" data-filter="medium" onclick="setFilter('medium',this)">Medium</button>
+          <button class="ftab" data-filter="configuration_issue" onclick="setFilter('configuration_issue',this)">Configuration</button>
+          <button class="ftab" data-filter="inactive" onclick="setFilter('inactive',this)">Inactive</button>
           <button class="ftab" data-filter="clean" onclick="setFilter('clean',this)">Clean</button>
         </div>
-        <button class="export-btn" onclick="exportCSV()">Export CSV</button>
+      </div>
+      <div class="filter-note" id="filter-note">
+        Select all required conditions, then click Run Filter. For example:
+        CNAME present + provider not identified + HTTP 404.
       </div>
     </div>
 
@@ -761,49 +1265,136 @@ td {
             <th>Domain</th>
             <th>Severity</th>
             <th>Verdict</th>
+            <th>DNS State</th>
+            <th>DNS Target / Address</th>
             <th>Provider</th>
-            <th>CNAME</th>
             <th>HTTP</th>
             <th>Confidence</th>
           </tr>
         </thead>
         <tbody id="results-tbody"></tbody>
       </table>
+      <div class="filter-empty-state" id="filter-empty-state">
+        No results match this filter combination. Reset one or more filters to widen the view.
+      </div>
     </div>
   </div>
 </main>
 
 <script>
-const API = 'http://localhost:8000';
+const pageParams = new URLSearchParams(window.location.search);
+let API = pageParams.get('api') || `http://${window.location.hostname}:8000`;
+
+function updateHistoryLink() {
+  document.getElementById('history-link').href = `history.html?api=${encodeURIComponent(API)}`;
+}
+
+async function resolveBackendApi() {
+  if (pageParams.get('api')) {
+    updateHistoryLink();
+    return;
+  }
+  const candidates = [
+    `http://${window.location.hostname}:8000`,
+    `http://${window.location.hostname}:8001`,
+  ];
+  let reachableBackend = null;
+  for (const candidate of candidates) {
+    try {
+      const response = await fetch(`${candidate}/health`);
+      if (!response.ok) continue;
+      const health = await response.json();
+      if (!reachableBackend) reachableBackend = candidate;
+      if (health.database?.enabled) {
+        API = candidate;
+        updateHistoryLink();
+        return;
+      }
+    } catch {}
+  }
+  if (reachableBackend) API = reachableBackend;
+  updateHistoryLink();
+}
 let allResults = [];
 let currentFilter = 'all';
 let uploadedDomains = [];
 let inputMode = 'file';
 let enumerationInputTotal = 0;
 let currentScanController = null;
+let appliedFilters = {
+  severity: 'all',
+  search: '',
+  sort: 'newest',
+  verdict: 'all',
+  dnsState: 'all',
+  record: 'all',
+  cname: 'all',
+  providerState: 'all',
+  provider: 'all',
+  http: 'all',
+};
+
+const advancedFilterIds = [
+  'result-search',
+  'sort-results',
+  'verdict-filter',
+  'dns-state-filter',
+  'record-filter',
+  'cname-filter',
+  'provider-state-filter',
+  'provider-filter',
+  'http-filter',
+];
+
+advancedFilterIds.forEach(id => {
+  const control = document.getElementById(id);
+  if (!control) return;
+  control.addEventListener(id === 'result-search' ? 'input' : 'change', () => {
+    markFiltersPending();
+  });
+});
+
+document.getElementById('result-search').addEventListener('keydown', event => {
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    runFilters();
+  }
+});
 
 // Check backend, Codex, and enumeration tool health
 async function checkHealth() {
   try {
     const r = await fetch(`${API}/health`);
+    if (!r.ok) throw new Error(`Backend returned ${r.status}`);
     const data = await r.json();
     const dot = document.getElementById('codex-dot');
     const lbl = document.getElementById('codex-label');
+    const aiCheckbox = document.getElementById('ai-cb');
+    const aiOption = document.getElementById('ai-option');
+    const aiNote = document.getElementById('ai-option-note');
     const tools = data.tools || {};
     const enumReady = tools.amass || tools.subfinder;
-    if (data.codex) {
-      dot.className = 'dot ok';
-      lbl.textContent = `codex ready · enum ${enumReady ? 'ready' : 'missing'}`;
-    } else {
-      dot.className = 'dot err';
-      lbl.textContent = `codex key missing · enum ${enumReady ? 'ready' : 'missing'}`;
-    }
+    dot.className = 'dot ok';
+    lbl.textContent = `backend ready · AI ${data.codex ? 'ready' : 'not configured'} · enum ${enumReady ? 'ready' : 'optional'}`;
+    aiCheckbox.disabled = !data.codex;
+    aiOption.classList.toggle('disabled', !data.codex);
+    aiNote.textContent = data.codex
+      ? 'Adds a short evidence-based review to actionable findings only.'
+      : 'Unavailable until OPENAI_API_KEY is configured; scanning is unaffected.';
+    if (!data.codex) aiCheckbox.checked = false;
   } catch {
     document.getElementById('codex-dot').className = 'dot err';
     document.getElementById('codex-label').textContent = 'backend offline';
+    document.getElementById('ai-cb').disabled = true;
+    document.getElementById('ai-option').classList.add('disabled');
+    document.getElementById('ai-option-note').textContent = 'Unavailable while the backend is offline.';
   }
 }
-checkHealth();
+async function initializeBackend() {
+  await resolveBackendApi();
+  await checkHealth();
+}
+initializeBackend();
 setInterval(checkHealth, 15000);
 
 // File handling
@@ -812,13 +1403,31 @@ const dropZone = document.getElementById('drop-zone');
 const domainInput = document.getElementById('domain-input');
 
 function setInputMode(mode) {
+  const previousMode = inputMode;
   inputMode = mode;
   const isFile = mode === 'file';
+  const enumCheckbox = document.getElementById('enum-cb');
+  const enumOption = document.getElementById('enum-option');
+  const enumNote = document.getElementById('enum-option-note');
   dropZone.style.display = isFile ? 'block' : 'none';
   document.getElementById('domain-entry').classList.toggle('visible', !isFile);
   document.getElementById('file-badge').style.display = isFile && window._selectedFile ? 'flex' : 'none';
   document.getElementById('file-mode-btn').classList.toggle('active', isFile);
   document.getElementById('domain-mode-btn').classList.toggle('active', !isFile);
+  if (!isFile) {
+    if (previousMode === 'file') {
+      enumCheckbox.dataset.filePreference = enumCheckbox.checked ? 'checked' : 'unchecked';
+    }
+    enumCheckbox.checked = true;
+    enumCheckbox.disabled = true;
+    enumOption.classList.add('disabled');
+    enumNote.textContent = 'Automatically enabled for direct root-domain scans.';
+  } else {
+    enumCheckbox.disabled = false;
+    enumCheckbox.checked = enumCheckbox.dataset.filePreference === 'checked';
+    enumOption.classList.remove('disabled');
+    enumNote.textContent = 'Optional for Excel scans; uses available passive and local tools.';
+  }
   updateScanButton();
   if (!isFile) domainInput.focus();
 }
@@ -867,13 +1476,15 @@ function handleFile(file) {
 }
 
 // Stats tracking
-let stats = { total: 0, critical: 0, high: 0, medium: 0, clean: 0 };
+let stats = { total: 0, critical: 0, high: 0, medium: 0, configuration: 0, inactive: 0, clean: 0 };
 
 function resetStats() {
-  stats = { total: 0, critical: 0, high: 0, medium: 0, clean: 0 };
+  stats = { total: 0, critical: 0, high: 0, medium: 0, configuration: 0, inactive: 0, clean: 0 };
   allResults = [];
   updateStatCards();
   document.getElementById('results-tbody').innerHTML = '';
+  updateProviderOptions();
+  updateVisibleCount(0);
 }
 
 function updateStatCards() {
@@ -881,6 +1492,8 @@ function updateStatCards() {
   document.getElementById('stat-critical').textContent = stats.critical;
   document.getElementById('stat-high').textContent = stats.high;
   document.getElementById('stat-medium').textContent = stats.medium;
+  document.getElementById('stat-configuration').textContent = stats.configuration;
+  document.getElementById('stat-inactive').textContent = stats.inactive;
   document.getElementById('stat-clean').textContent = stats.clean;
 }
 
@@ -999,7 +1612,9 @@ function handleMessage(msg) {
     if (r.severity === 'critical') stats.critical++;
     else if (r.severity === 'high') stats.high++;
     else if (r.severity === 'medium') stats.medium++;
-    else stats.clean++;
+    else if (r.verdict === 'configuration_issue') stats.configuration++;
+    else if (r.verdict === 'inactive') stats.inactive++;
+    else if (r.verdict === 'clean') stats.clean++;
     updateStatCards();
 
     appendRow(r);
@@ -1017,9 +1632,48 @@ function handleMessage(msg) {
 function verdictLabel(v) {
   return {
     clean: 'Clean',
+    inactive: 'Inactive',
+    configuration_issue: 'Configuration Issue',
     dangling_dns: 'Dangling DNS',
     takeover_vulnerable: 'Takeover Risk',
+    ownership_validation_required: 'Ownership Validation Required',
   }[v] || v;
+}
+
+function escapeHtml(value) {
+  return String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#039;');
+}
+
+function dnsState(r) {
+  return r.dns?.resolution_status ||
+    (r.dns?.nxdomain ? 'NXDOMAIN' : r.dns?.resolves ? 'Resolved' : 'No DNS answer');
+}
+
+function dnsTarget(r) {
+  if (r.dns?.cname) return { main: `CNAME: ${r.dns.cname}`, sub: '' };
+  const addresses = [...(r.dns?.a_records || []), ...(r.dns?.aaaa_records || [])];
+  if (addresses.length) {
+    const types = (r.dns?.record_types || []).filter(t => t === 'A' || t === 'AAAA').join('/');
+    return { main: `${types || 'IP'}: ${addresses[0]}`, sub: addresses.slice(1).join(', ') };
+  }
+  const errors = Object.entries(r.dns?.query_errors || {})
+    .map(([type, message]) => `${type}: ${message}`).join(' | ');
+  return { main: 'No active DNS target', sub: errors };
+}
+
+function providerLabel(r) {
+  if (r.provider) return { main: r.provider, sub: 'Matched from CNAME' };
+  if (r.dns?.cname) return { main: 'Not identified', sub: 'CNAME is outside the signature database' };
+  return { main: 'Not applicable', sub: 'No CNAME provider relationship' };
+}
+
+function httpLabel(r) {
+  if (r.http?.status) {
+    return { main: String(r.http.status), sub: r.http.url || r.http.title || 'HTTP response received' };
+  }
+  if (r.http?.attempted) return { main: 'No response', sub: r.http.error || 'HTTP request failed' };
+  return { main: 'Not attempted', sub: r.http?.error || 'DNS did not resolve' };
 }
 
 function appendRow(r) {
@@ -1027,20 +1681,21 @@ function appendRow(r) {
   const sev = r.severity || 'info';
   const idx = allResults.length - 1;
 
-  const hidden = shouldHide(r);
-
   const tr = document.createElement('tr');
   tr.dataset.severity = sev;
   tr.dataset.idx = idx;
-  if (hidden) tr.classList.add('hidden-row');
 
+  const dns = dnsTarget(r);
+  const provider = providerLabel(r);
+  const http = httpLabel(r);
   tr.innerHTML = `
-    <td title="${r.domain}" style="color:var(--text);font-weight:500">${r.domain}</td>
-    <td><span class="sev-badge sev-${sev}">${sev}</span></td>
-    <td style="color:var(--muted)">${verdictLabel(r.verdict)}</td>
-    <td style="color:var(--muted)">${r.provider || '—'}</td>
-    <td title="${r.dns?.cname || ''}" style="color:var(--muted)">${truncate(r.dns?.cname, 30) || '—'}</td>
-    <td style="color:${r.http?.status >= 400 ? 'var(--critical)' : 'var(--muted)'}">${r.http?.status || '—'}</td>
+    <td title="${escapeHtml(r.domain)}" style="color:var(--text);font-weight:500">${escapeHtml(r.domain)}</td>
+    <td><span class="sev-badge sev-${escapeHtml(sev)}">${escapeHtml(sev)}</span></td>
+    <td style="color:var(--muted)">${escapeHtml(verdictLabel(r.verdict))}</td>
+    <td><span class="evidence-main">${escapeHtml(dnsState(r))}</span><span class="evidence-sub">${escapeHtml((r.dns?.record_types || []).join(', ') || 'No record type')}</span></td>
+    <td title="${escapeHtml([dns.main,dns.sub].filter(Boolean).join(' — '))}"><span class="evidence-main">${escapeHtml(truncate(dns.main, 38))}</span>${dns.sub ? `<span class="evidence-sub">${escapeHtml(dns.sub)}</span>` : ''}</td>
+    <td title="${escapeHtml(r.provider_evidence || provider.sub)}"><span class="evidence-main">${escapeHtml(provider.main)}</span><span class="evidence-sub">${escapeHtml(provider.sub)}</span></td>
+    <td title="${escapeHtml(http.sub)}" style="color:${r.http?.status >= 400 ? 'var(--critical)' : 'var(--muted)'}"><span class="evidence-main">${escapeHtml(http.main)}</span><span class="evidence-sub">${escapeHtml(http.sub)}</span></td>
     <td>
       <div class="confidence-bar">
         <div class="conf-track"><div class="conf-fill" style="width:${r.confidence}%"></div></div>
@@ -1051,6 +1706,8 @@ function appendRow(r) {
 
   tr.addEventListener('click', () => openDetailsPage(idx));
   tbody.prepend(tr); // newest first
+  updateProviderOptions();
+  applyFilters();
 }
 
 function truncate(s, n) {
@@ -1058,29 +1715,249 @@ function truncate(s, n) {
   return s.length > n ? s.slice(0, n) + '…' : s;
 }
 
+function filterValue(id) {
+  const control = document.getElementById(id);
+  return control ? control.value : 'all';
+}
+
+function dnsStateKey(r) {
+  if (r.dns?.cname_target_nxdomain) return 'cname_target_nxdomain';
+  if (r.dns?.nxdomain) return 'nxdomain';
+  if (Object.keys(r.dns?.query_errors || {}).length) return 'query_failed';
+  if (r.dns?.resolves) return 'resolved';
+  return 'no_answer';
+}
+
+function providerStateKey(r) {
+  if (r.provider) return 'matched';
+  if (r.dns?.cname) return 'not_identified';
+  return 'not_applicable';
+}
+
+function matchesHttpFilter(r, filter) {
+  if (filter === 'all') return true;
+  const status = Number(r.http?.status || 0);
+  if (filter === 'responded') return status > 0;
+  if (filter === '2xx') return status >= 200 && status < 300;
+  if (filter === '3xx') return status >= 300 && status < 400;
+  if (filter === '4xx') return status >= 400 && status < 500;
+  if (filter === '404') return status === 404;
+  if (filter === '5xx') return status >= 500 && status < 600;
+  if (filter === 'no_response') return Boolean(r.http?.attempted) && !status;
+  if (filter === 'not_attempted') return !r.http?.attempted;
+  return true;
+}
+
+function searchableEvidence(r) {
+  const queryErrors = Object.entries(r.dns?.query_errors || {})
+    .map(([type, message]) => `${type} ${message}`);
+  return [
+    r.domain,
+    r.severity,
+    r.verdict,
+    verdictLabel(r.verdict),
+    r.reason,
+    dnsState(r),
+    ...(r.dns?.record_types || []),
+    r.dns?.cname,
+    ...(r.dns?.a_records || []),
+    ...(r.dns?.aaaa_records || []),
+    ...queryErrors,
+    r.provider,
+    r.provider_evidence,
+    r.http?.status,
+    r.http?.url,
+    r.http?.title,
+    r.http?.error,
+    r.ai_analysis,
+  ].filter(value => value !== null && value !== undefined).join(' ').toLowerCase();
+}
+
+function collectFilterCriteria() {
+  return {
+    severity: currentFilter,
+    search: filterValue('result-search').trim().toLowerCase(),
+    sort: filterValue('sort-results'),
+    verdict: filterValue('verdict-filter'),
+    dnsState: filterValue('dns-state-filter'),
+    record: filterValue('record-filter'),
+    cname: filterValue('cname-filter'),
+    providerState: filterValue('provider-state-filter'),
+    provider: filterValue('provider-filter'),
+    http: filterValue('http-filter'),
+  };
+}
+
+function matchesAllFilters(r, filters = appliedFilters) {
+  if (filters.severity === 'clean' && r.verdict !== 'clean') return false;
+  if (filters.severity === 'inactive' && r.verdict !== 'inactive') return false;
+  if (filters.severity === 'configuration_issue' && r.verdict !== 'configuration_issue') return false;
+  if (!['all', 'clean', 'inactive', 'configuration_issue'].includes(filters.severity) &&
+      r.severity !== filters.severity) return false;
+
+  if (filters.search && !searchableEvidence(r).includes(filters.search)) return false;
+
+  if (filters.verdict !== 'all' && r.verdict !== filters.verdict) return false;
+
+  if (filters.dnsState !== 'all' && dnsStateKey(r) !== filters.dnsState) return false;
+
+  const hasCname = Boolean(r.dns?.cname);
+  const hasA = Boolean(r.dns?.a_records?.length);
+  const hasAAAA = Boolean(r.dns?.aaaa_records?.length);
+  if (filters.record === 'cname' && !hasCname) return false;
+  if (filters.record === 'a' && !hasA) return false;
+  if (filters.record === 'aaaa' && !hasAAAA) return false;
+  if (filters.record === 'address' && !hasA && !hasAAAA) return false;
+  if (filters.record === 'none' && (hasCname || hasA || hasAAAA)) return false;
+
+  if (filters.cname === 'present' && !hasCname) return false;
+  if (filters.cname === 'missing' && hasCname) return false;
+  if (filters.cname === 'target_nxdomain' && !r.dns?.cname_target_nxdomain) return false;
+
+  if (filters.providerState !== 'all' && providerStateKey(r) !== filters.providerState) return false;
+
+  if (filters.provider !== 'all' &&
+      String(r.provider || '').toLowerCase() !== filters.provider) return false;
+
+  if (!matchesHttpFilter(r, filters.http)) return false;
+
+  return true;
+}
+
 function shouldHide(r) {
-  if (currentFilter === 'all') return false;
-  return r.severity !== currentFilter && r.verdict !== (currentFilter === 'clean' ? 'clean' : null);
+  return !matchesAllFilters(r);
+}
+
+function sortResultRows(rows) {
+  const mode = appliedFilters.sort;
+  const severityRank = { critical: 4, high: 3, medium: 2, info: 1, clean: 0 };
+  return rows.sort((a, b) => {
+    const aIdx = Number(a.dataset.idx);
+    const bIdx = Number(b.dataset.idx);
+    const aResult = allResults[aIdx] || {};
+    const bResult = allResults[bIdx] || {};
+    if (mode === 'oldest') return aIdx - bIdx;
+    if (mode === 'severity') {
+      return (severityRank[bResult.severity] || 0) - (severityRank[aResult.severity] || 0) ||
+        Number(bResult.confidence || 0) - Number(aResult.confidence || 0);
+    }
+    if (mode === 'confidence_desc') return Number(bResult.confidence || 0) - Number(aResult.confidence || 0);
+    if (mode === 'confidence_asc') return Number(aResult.confidence || 0) - Number(bResult.confidence || 0);
+    if (mode === 'domain_asc') return String(aResult.domain || '').localeCompare(String(bResult.domain || ''));
+    if (mode === 'domain_desc') return String(bResult.domain || '').localeCompare(String(aResult.domain || ''));
+    if (mode === 'http_status') {
+      return Number(aResult.http?.status || 999) - Number(bResult.http?.status || 999);
+    }
+    return bIdx - aIdx;
+  });
+}
+
+function updateProviderOptions() {
+  const select = document.getElementById('provider-filter');
+  if (!select) return;
+  const selected = select.value;
+  const providers = [...new Set(allResults.map(r => r.provider).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b));
+  select.innerHTML = '<option value="all">Any identified provider</option>' +
+    providers.map(provider =>
+      `<option value="${escapeHtml(provider.toLowerCase())}">${escapeHtml(provider)}</option>`
+    ).join('');
+  select.value = providers.some(provider => provider.toLowerCase() === selected) ? selected : 'all';
+}
+
+function updateVisibleCount(visible) {
+  const label = document.getElementById('visible-count');
+  if (label) label.textContent = `${visible} visible / ${allResults.length} total`;
+  const emptyState = document.getElementById('filter-empty-state');
+  if (emptyState) emptyState.style.display = allResults.length > 0 && visible === 0 ? 'block' : 'none';
+}
+
+function applyFilters() {
+  const tbody = document.getElementById('results-tbody');
+  if (!tbody) return;
+  const rows = sortResultRows([...tbody.querySelectorAll('tr[data-idx]')]);
+  let visible = 0;
+  rows.forEach(tr => {
+    const r = allResults[Number(tr.dataset.idx)];
+    const show = Boolean(r) && matchesAllFilters(r);
+    tr.classList.toggle('hidden-row', !show);
+    if (show) visible++;
+    tbody.appendChild(tr);
+  });
+  updateVisibleCount(visible);
+}
+
+function syncCategorySelection(filter) {
+  currentFilter = filter;
+  document.querySelectorAll('.ftab').forEach(button => {
+    button.classList.toggle('active', button.dataset.filter === filter);
+  });
+  document.querySelectorAll('.stat-card[data-category]').forEach(card => {
+    card.classList.toggle('active', card.dataset.category === filter);
+  });
 }
 
 function setFilter(filter, btn) {
-  currentFilter = filter;
-  document.querySelectorAll('.ftab').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
+  syncCategorySelection(filter);
+  markFiltersPending();
+}
 
-  document.querySelectorAll('#results-tbody tr').forEach(tr => {
-    const sev = tr.dataset.severity;
-    const idx = parseInt(tr.dataset.idx);
-    const r = allResults[idx];
-    if (!r) return;
+function markFiltersPending() {
+  const button = document.getElementById('apply-filter-btn');
+  const note = document.getElementById('filter-note');
+  button.classList.add('pending');
+  note.classList.add('pending');
+  note.textContent = 'Filter selections changed. Finish selecting the conditions, then click Run Filter.';
+}
 
-    let show = false;
-    if (filter === 'all') show = true;
-    else if (filter === 'clean') show = r.verdict === 'clean';
-    else show = r.severity === filter;
+function runFilters() {
+  appliedFilters = collectFilterCriteria();
+  syncCategorySelection(currentFilter);
+  document.getElementById('apply-filter-btn').classList.remove('pending');
+  const note = document.getElementById('filter-note');
+  note.classList.remove('pending');
+  note.textContent = 'Filters applied. Change any condition and click Run Filter again to update the results.';
+  applyFilters();
+}
 
-    tr.classList.toggle('hidden-row', !show);
+function resetAdvancedFilterControls() {
+  document.getElementById('result-search').value = '';
+  document.getElementById('sort-results').value = 'newest';
+  document.getElementById('verdict-filter').value = 'all';
+  document.getElementById('dns-state-filter').value = 'all';
+  document.getElementById('record-filter').value = 'all';
+  document.getElementById('cname-filter').value = 'all';
+  document.getElementById('provider-state-filter').value = 'all';
+  document.getElementById('provider-filter').value = 'all';
+  document.getElementById('http-filter').value = 'all';
+}
+
+function showCategory(category) {
+  syncCategorySelection(category);
+  resetAdvancedFilterControls();
+  appliedFilters = collectFilterCriteria();
+  document.getElementById('apply-filter-btn').classList.remove('pending');
+  const note = document.getElementById('filter-note');
+  note.classList.remove('pending');
+  note.textContent = category === 'all'
+    ? 'Showing all scan results.'
+    : `Showing all ${category} results. Select any subdomain to open its full details in a new page.`;
+  applyFilters();
+  document.getElementById('results-section').scrollIntoView({
+    behavior: 'smooth',
+    block: 'start',
   });
+}
+
+function resetFilters() {
+  syncCategorySelection('all');
+  resetAdvancedFilterControls();
+  appliedFilters = collectFilterCriteria();
+  document.getElementById('apply-filter-btn').classList.remove('pending');
+  const note = document.getElementById('filter-note');
+  note.classList.remove('pending');
+  note.textContent = 'All filters reset. Showing every result.';
+  applyFilters();
 }
 
 function openDetailsPage(idx) {
@@ -1107,7 +1984,7 @@ function openDetailsPage(idx) {
 
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   window.setTimeout(() => {
-    detailWindow.location.replace(`detail.html?key=${encodeURIComponent(key)}`);
+    detailWindow.location.replace(`detail.html?key=${encodeURIComponent(key)}&api=${encodeURIComponent(API)}`);
   }, reducedMotion ? 80 : 450);
 }
 
@@ -1137,6 +2014,8 @@ function openDrawer(idx) {
       <div class="drawer-section-title">DNS</div>
       <div class="kv-row"><span class="kv-key">CNAME target</span><span class="kv-val">${r.dns?.cname || 'none'}</span></div>
       <div class="kv-row"><span class="kv-key">A records</span><span class="kv-val">${(r.dns?.a_records || []).join(', ') || 'none'}</span></div>
+      <div class="kv-row"><span class="kv-key">AAAA records</span><span class="kv-val">${(r.dns?.aaaa_records || []).join(', ') || 'none'}</span></div>
+      <div class="kv-row"><span class="kv-key">CNAME target NXDOMAIN</span><span class="kv-val">${r.dns?.cname_target_nxdomain ? 'yes' : 'no'}</span></div>
       <div class="kv-row"><span class="kv-key">Resolves</span><span class="kv-val">${r.dns?.resolves ? 'yes' : 'no'}</span></div>
       <div class="kv-row"><span class="kv-key">NXDOMAIN</span><span class="kv-val" style="color:${r.dns?.nxdomain ? 'var(--critical)' : 'var(--muted)'}">${r.dns?.nxdomain ? 'YES' : 'no'}</span></div>
     </div>
@@ -1145,7 +2024,10 @@ function openDrawer(idx) {
       <div class="drawer-section-title">HTTP</div>
       <div class="kv-row"><span class="kv-key">Status</span><span class="kv-val" style="color:${(r.http?.status||0) >= 400 ? 'var(--critical)' : 'var(--clean)'}">${r.http?.status || 'no response'}</span></div>
       <div class="kv-row"><span class="kv-key">Title</span><span class="kv-val">${r.http?.title || '—'}</span></div>
+      <div class="kv-row"><span class="kv-key">TLS certificate issue</span><span class="kv-val">${r.http?.tls_error || 'none'}</span></div>
       <div class="kv-row"><span class="kv-key">Provider</span><span class="kv-val">${r.provider || '—'}</span></div>
+      <div class="kv-row"><span class="kv-key">Fingerprints checked</span><span class="kv-val">${(r.fingerprint_evidence?.checked || []).join(' | ') || 'not applicable'}</span></div>
+      <div class="kv-row"><span class="kv-key">Fingerprint result</span><span class="kv-val">${r.fingerprint_evidence?.matched ? `MATCHED: ${r.fingerprint_evidence.matched}` : r.fingerprint_evidence?.status === 'not_detected' ? 'Not detected' : 'Not applicable'}</span></div>
       <div class="kv-row"><span class="kv-key">Scan time</span><span class="kv-val">${r.scan_time_s}s</span></div>
     </div>
 
@@ -1170,6 +2052,15 @@ function openDrawer(idx) {
 
 function getRemediation(r) {
   if (r.verdict === 'clean') return 'No action required.';
+  if (r.verdict === 'inactive') return 'No takeover remediation required. Confirm whether this historical hostname should remain in the asset inventory.';
+  if (r.verdict === 'configuration_issue') return 'No takeover fingerprint was detected. Ask the owning team to review the DNS-to-provider mapping, service region or endpoint, access policy, and TLS certificate shown above.';
+  if (r.verdict === 'ownership_validation_required') {
+    return `<strong style="color:var(--high)">OWNERSHIP VALIDATION REQUIRED.</strong><br>
+    1. Confirm the currently resolving resource belongs to an approved corporate account.<br>
+    2. Compare the current DNS, HTTP title, final URL and content with the previous dangling result.<br>
+    3. Contact the recorded owning team before changing DNS.<br>
+    4. Mark the earlier finding Resolved or False Positive only after ownership is verified.`;
+  }
   if (r.verdict === 'takeover_vulnerable') {
     return `<strong style="color:var(--critical)">IMMEDIATE ACTION REQUIRED.</strong><br>
     1. Delete the DNS record for <code>${r.domain}</code> immediately.<br>
@@ -1191,12 +2082,24 @@ function closeDrawer() {
   document.getElementById('overlay').classList.remove('open');
 }
 
-function exportCSV() {
-  const rows = [['Domain','Severity','Verdict','Provider','CNAME','HTTP Status','Confidence','AI Analysis','Reason']];
-  for (const r of allResults) {
+function exportCSV(scope = 'all') {
+  const rows = [['Domain','Severity','Verdict','DNS State','DNS Record Types','CNAME','A Records','AAAA Records','DNS Query Errors','Provider','Provider Evidence','HTTP Attempted','HTTP Status','HTTP URL','HTTP Title','HTTP Error','Confidence','AI Analysis','Reason']];
+  const exportResults = scope === 'visible'
+    ? [...document.querySelectorAll('#results-tbody tr[data-idx]:not(.hidden-row)')]
+        .map(row => allResults[Number(row.dataset.idx)])
+        .filter(Boolean)
+    : allResults;
+  for (const r of exportResults) {
     rows.push([
-      r.domain, r.severity, r.verdict, r.provider || '',
-      r.dns?.cname || '', r.http?.status || '',
+      r.domain, r.severity, r.verdict, dnsState(r),
+      (r.dns?.record_types || []).join('; '),
+      r.dns?.cname || '',
+      (r.dns?.a_records || []).join('; '),
+      (r.dns?.aaaa_records || []).join('; '),
+      Object.entries(r.dns?.query_errors || {}).map(([type,message]) => `${type}: ${message}`).join('; '),
+      r.provider || '', r.provider_evidence || '',
+      r.http?.attempted ? 'yes' : 'no',
+      r.http?.status || '', r.http?.url || '', r.http?.title || '', r.http?.error || '',
       r.confidence, r.ai_analysis || '', r.reason
     ]);
   }
@@ -1204,8 +2107,9 @@ function exportCSV() {
   const blob = new Blob([csv], { type: 'text/csv' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = `danglescan-${new Date().toISOString().slice(0,10)}.csv`;
+  a.download = `danglescan-${scope}-${new Date().toISOString().slice(0,10)}.csv`;
   a.click();
+  window.setTimeout(() => URL.revokeObjectURL(a.href), 0);
 }
 </script>
 </body>

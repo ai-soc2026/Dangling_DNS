@@ -1,90 +1,158 @@
 # DangleScan — Subdomain Takeover Scanner
 
-Scan thousands of domains for dangling DNS records and subdomain takeover vulnerabilities.
-Input: Excel file (.xlsx) with domains. Output: real-time streaming results with optional Codex analysis and optional subdomain enumeration.
+Scan domains for dangling DNS and takeover evidence, keep scan history, and automatically capture each reachable webpage in Finding Details.
 
-## Requirements
-- Python 3.11+
-- OpenAI API key for Codex analysis (optional)
-- `amass` and/or `subfinder` for subdomain enumeration (optional)
+## What is included
 
-## Setup
+- `main.py` — FastAPI backend, scanning, enumeration and detection rules
+- `database.py` — SQLite/PostgreSQL database setup and history functions
+- `index.html` — scanner interface
+- `detail.html` — full result evidence page
+- `history.html` — stored scan history page
+- `requirements.txt` — Python packages
+- `migrate_sqlite_to_postgres.py` — optional future migration utility
+- `tests/` — automated tests for detection and database behaviour
+- `screenshots.py` — automatic Chromium webpage captures
+- `Start_DangleScan.command` — macOS startup launcher
 
-### 1. Configure Codex analysis (optional)
+## Database behaviour
+
+No scan-history database is included in this release. This is intentional.
+Historical scan data can contain internal asset information and should not be
+shared unless it has been approved.
+
+The first time the backend starts, it automatically creates `danglescan.db` in
+this folder. It also creates the required `scans` and `scan_results` tables.
+No manual database installation is needed for a local demonstration.
+
+The SQLite database belongs to the backend. Port 8000 is the backend address;
+it is not the database port.
+
+## Run on macOS or Linux
+
+Open Terminal in this folder and run:
+
 ```bash
-export OPENAI_API_KEY="your_api_key_here"
-# Optional: override the default model
-export OPENAI_MODEL="gpt-5.2"
-```
-
-### 2. Install Python dependencies
-```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
 pip install -r requirements.txt
+python -m playwright install chromium
+uvicorn main:app --host 127.0.0.1 --port 8000
 ```
 
-### 3. Start the backend
+Keep that Terminal open. Open a second Terminal in the same folder and run:
+
 ```bash
-uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+source .venv/bin/activate
+python -m http.server 3000 --bind 127.0.0.1
 ```
 
-### 4. Open the frontend
+Open the scanner:
+
+```text
+http://127.0.0.1:3000/index.html?api=http%3A%2F%2F127.0.0.1%3A8000
+```
+
+Useful pages:
+
+- Scanner: `http://127.0.0.1:3000/index.html?api=http%3A%2F%2F127.0.0.1%3A8000`
+- Scan History: `http://127.0.0.1:3000/history.html?api=http%3A%2F%2F127.0.0.1%3A8000`
+- Backend health: `http://127.0.0.1:8000/health`
+- Read-only raw database view: `http://127.0.0.1:8000/database`
+
+Use `http://`, not `https://`, for these local addresses.
+
+## Optional enumeration tools
+
+DangleScan can use Subfinder and Amass when they are installed. It also uses
+the configured passive web sources. The scanner still runs if Subfinder or
+Amass is unavailable, but discovery coverage may be lower.
+
+## Optional AI analysis
+
+The deterministic rule engine works without an API key. To enable the optional
+analyst summary, set `OPENAI_API_KEY` before starting the backend. Do not place
+the real key in this folder or commit it to source control.
+
+## Run the automated checks
+
 ```bash
-# Just open index.html in your browser
-# Or serve it from this folder:
-python -m http.server 3000
-# Then visit http://localhost:3000
+source .venv/bin/activate
+python -m unittest discover -s tests -v
 ```
 
-### 5. Install enumeration tools (optional)
+The test suite covers DNS rules, persistence, and automatic webpage screenshots.
+
+## Moving existing SQLite history
+
+Only do this when the scan history has been approved for sharing.
+
+1. Stop the DangleScan backend completely.
+2. Copy the single `danglescan.db` file into this folder.
+3. Do not copy `danglescan.db-wal` or `danglescan.db-shm` while the backend is
+   running.
+4. Start the backend and open Scan History.
+
+For a clean demonstration, do not copy any database. A new empty database is
+created automatically.
+
+## PostgreSQL for production
+
+SQLite is suitable for a local demonstration. PostgreSQL is recommended for a
+shared production deployment because it supports concurrent workers, central
+backups, access control and recovery.
+
+The application can use PostgreSQL through `DATABASE_URL`:
+
 ```bash
-# macOS examples
-brew install amass
-brew install subfinder
+export DATABASE_URL="postgresql+psycopg://username:password@hostname:5432/danglescan"
+uvicorn main:app --host 127.0.0.1 --port 8000
 ```
 
-## Excel Format
-- Any .xlsx file works
-- Put domains one per cell, any sheet, any column
-- Examples of valid values: `example.com`, `api.example.com`, `staging.brand.io`
-- Headers are ignored (non-domain text is skipped automatically)
+Use managed credentials and TLS in production. Do not store passwords in the
+source files.
 
-## How it works
+## Important release note
 
-### Rule engine (always runs, zero cost)
-- Checks DNS: A records, CNAME targets, NXDOMAIN
-- Detects 20+ cloud provider takeover fingerprints in HTTP responses
-- Identifies dangling CNAMEs to AWS S3, Azure, Heroku, GitHub Pages, Netlify, etc.
+`video.pitchforkmedia.com` is classified as **Configuration Issue / Info** when
+the AWS S3 bucket endpoint exists but the custom hostname has an HTTPS
+certificate problem or the regional endpoint returns an error such as HTTP 403.
+The result explains the configuration problem separately from takeover risk.
 
-### AI layer (Codex via OpenAI API)
-- Runs only on non-clean findings to save time
-- Filters false positives with contextual reasoning
-- Generates plain-English remediation briefs
-- Identifies likely owning team (infra/marketing/dev)
-- Toggle on/off in the UI
 
-### Subdomain enumeration
-- Toggle on/off in the UI
-- Runs `subfinder -silent -d <domain>` when `subfinder` is installed
-- Runs `amass enum -passive -d <domain>` when `amass` is installed
-- Merges discovered subdomains with domains from the uploaded Excel file before scanning
+## Automatic webpage screenshots
 
-### Severity scoring
-- **Critical**: Confirmed takeover signature in HTTP body
-- **High**: Dangling CNAME to cloud provider, NXDOMAIN
-- **Medium**: HTTP 404/410 on cloud-pointed domain
-- **Clean**: Domain resolves and no issues found
+Every new subdomain result includes screenshot evidence. A separate headless Chromium
+browser visits HTTPS, then falls back to HTTP if navigation fails, and captures a
+1440 × 900 viewport. The image appears directly below Finding on the details page
+and can be opened at full size. There is no manual screenshot button and Flameshot
+is no longer required. Browser capture uses Playwright: https://playwright.dev/python/docs/screenshots.
 
-## Performance
-- 10 concurrent domain scans
-- ~2-5 seconds per domain (with AI), ~0.5s (rules only)
-- 100 domains ≈ 1-2 minutes
-- 4000 domains ≈ 20-40 minutes (run overnight)
+Install the Python requirements and run `python -m playwright install chromium`
+in the same environment/account as the backend. On Linux servers, use Playwright's
+OS dependency installation instructions if Chromium needs system libraries.
 
-## Concorde with your Condé Nast setup
-Point this at your domain list export. Schedule via cron:
-```bash
-# Run every 6 hours, save results
-0 */6 * * * curl -s -X POST http://localhost:8000/scan \
-  -F "file=@/path/to/domains.xlsx" \
-  -F "use_ai=true" > /var/log/danglescan/$(date +\%Y\%m\%d_\%H\%M).jsonl
-```
+Two captures run concurrently. Each has a 35-second timeout once a slot is available;
+capture time adds to scan duration. Each capture uses a fresh browser without saved
+sessions, downloads, or granted permissions. TLS verification remains enabled.
+Private/local addresses are excluded from browser requests. These checks are not
+a substitute for network egress isolation when deploying an untrusted-target scanner.
+
+Screenshots are saved under `data/screenshots/`; override this with
+`DANGLESCAN_SCREENSHOT_DIR`. Keep this folder with database backups because scan
+history stores image references. Images remain until explicitly removed; plan disk
+space accordingly. Do not expose the development servers publicly.
+
+Unresolvable domains, non-web services, browser failures, and unreachable pages show
+an explanatory status instead of a misleading blank image. Older findings need a
+new scan to gain screenshots. HTTP error pages are captured when a browser can render
+them. Screenshots do not change the DNS/HTTP risk verdict.
+
+### Starting on macOS
+
+Codex's shell sandbox may prevent Chromium from starting (a macOS Mach port
+permission error). Run the included `Start_DangleScan.command` from your normal
+Terminal to start the backend and frontend outside that sandbox. This does not
+require disabling Chromium's sandbox or TLS checks. Stop an existing backend on
+port 8000 first. The launcher creates `.venv` and installs dependencies when needed.

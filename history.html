@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>DangleScan — Scan History</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&amp;family=IBM+Plex+Sans:wght@300;400;500&amp;display=swap" rel="stylesheet"/>
+<style>
+:root {
+  --bg:#080b0f; --surface:#0e1319; --surface2:#141b23; --border:#1c2631;
+  --border2:#283647; --text:#c8d4e0; --muted:#617083; --accent:#00d4ff;
+  --critical:#ff4757; --high:#ff8c00; --medium:#f0c040; --info:#4ecdc4;
+  --clean:#2ed573; --mono:'IBM Plex Mono',monospace; --sans:'IBM Plex Sans',sans-serif;
+}
+* { box-sizing:border-box; margin:0; padding:0; }
+body { min-height:100vh; color:var(--text); background:var(--bg); font-family:var(--sans); }
+body::after { content:''; position:fixed; inset:0; pointer-events:none; background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.025) 2px,rgba(0,0,0,.025) 4px); }
+header { position:sticky; top:0; z-index:20; display:flex; justify-content:space-between; align-items:center; padding:18px 32px; border-bottom:1px solid var(--border); background:rgba(8,11,15,.94); backdrop-filter:blur(14px); }
+.brand { color:var(--accent); font:600 18px var(--mono); }
+.brand span { color:var(--muted); font-weight:400; }
+.header-actions { display:flex; align-items:center; gap:10px; }
+.service { display:flex; align-items:center; gap:7px; padding:6px 10px; border:1px solid var(--border); border-radius:999px; color:var(--muted); font:10px var(--mono); }
+.dot { width:7px; height:7px; border-radius:50%; background:var(--muted); }
+.dot.ok { background:var(--clean); box-shadow:0 0 6px var(--clean); }
+.dot.err { background:var(--critical); }
+.button,.link-button { min-height:34px; padding:8px 13px; border:1px solid var(--border2); border-radius:4px; background:var(--surface2); color:var(--text); cursor:pointer; font:11px var(--mono); text-decoration:none; }
+.button:hover,.link-button:hover { color:var(--accent); border-color:var(--accent); }
+.button.primary { border-color:var(--accent); background:var(--accent); color:var(--bg); font-weight:600; }
+.button.primary:hover { background:#37ddff; color:var(--bg); }
+main { max-width:1440px; margin:auto; padding:42px 32px 72px; }
+.eyebrow { margin-bottom:8px; color:var(--accent); font:500 10px var(--mono); letter-spacing:1.4px; text-transform:uppercase; }
+h1 { font:600 30px var(--mono); letter-spacing:-1px; }
+.intro { margin-top:8px; max-width:760px; color:var(--muted); font-size:14px; line-height:1.6; }
+.search-card,.panel { margin-top:24px; border:1px solid var(--border); border-radius:7px; background:linear-gradient(135deg,rgba(14,19,25,.96),rgba(10,14,19,.96)); }
+.search-card { padding:18px; }
+.search-row { display:grid; grid-template-columns:minmax(240px,1fr) auto; gap:10px; }
+input,select { width:100%; min-height:38px; padding:8px 11px; border:1px solid var(--border2); border-radius:4px; outline:none; background:var(--bg); color:var(--text); font:12px var(--mono); }
+input:focus,select:focus { border-color:var(--accent); box-shadow:0 0 0 2px rgba(0,212,255,.09); }
+.help { margin-top:9px; color:var(--muted); font:10px var(--mono); }
+.panel-head { display:flex; justify-content:space-between; align-items:center; gap:14px; padding:16px 18px; border-bottom:1px solid var(--border); }
+.panel-title { font:500 12px var(--mono); letter-spacing:.8px; text-transform:uppercase; }
+.panel-meta { color:var(--accent); font:10px var(--mono); }
+.toolbar { display:grid; grid-template-columns:minmax(220px,1fr) 180px auto; gap:9px; padding:14px 18px; border-bottom:1px solid var(--border); }
+.table-wrap { overflow:auto; }
+table { width:100%; border-collapse:collapse; min-width:980px; }
+th { padding:11px 14px; border-bottom:1px solid var(--border2); color:var(--muted); text-align:left; font:500 9px var(--mono); letter-spacing:.8px; text-transform:uppercase; }
+td { padding:12px 14px; border-bottom:1px solid var(--border); color:var(--text); font:11px var(--mono); vertical-align:top; }
+tbody tr { transition:background .12s; }
+tbody tr:hover { background:rgba(0,212,255,.035); }
+.domain { color:var(--text); font-weight:600; word-break:break-all; }
+.subtext { display:block; margin-top:4px; color:var(--muted); font-size:9px; line-height:1.4; }
+.status,.badge { display:inline-block; padding:3px 7px; border:1px solid var(--border2); border-radius:3px; font:600 9px var(--mono); text-transform:uppercase; }
+.status-completed,.sev-clean { color:var(--clean); border-color:rgba(46,213,115,.35); background:rgba(46,213,115,.08); }
+.status-running { color:var(--accent); border-color:rgba(0,212,255,.35); background:rgba(0,212,255,.08); }
+.status-stopped,.sev-info { color:var(--info); border-color:rgba(78,205,196,.35); background:rgba(78,205,196,.08); }
+.status-failed,.sev-critical { color:var(--critical); border-color:rgba(255,71,87,.35); background:rgba(255,71,87,.08); }
+.sev-high { color:var(--high); border-color:rgba(255,140,0,.35); background:rgba(255,140,0,.08); }
+.sev-medium { color:var(--medium); border-color:rgba(240,192,64,.35); background:rgba(240,192,64,.08); }
+.counts { white-space:nowrap; }
+.count-risk { color:var(--high); }
+.count-inactive { color:var(--info); }
+.count-clean { color:var(--clean); }
+.empty { padding:44px 20px; color:var(--muted); text-align:center; font:12px var(--mono); line-height:1.8; }
+.empty a { color:var(--accent); }
+.error { margin-top:14px; padding:12px; display:none; border:1px solid rgba(255,71,87,.3); color:var(--critical); background:rgba(255,71,87,.07); font:11px var(--mono); }
+#search-panel,#results-panel { display:none; }
+.clickable { cursor:pointer; }
+@media (max-width:800px) {
+  header { padding:14px 18px; }
+  .service { display:none; }
+  main { padding:30px 18px 56px; }
+  .search-row,.toolbar { grid-template-columns:1fr; }
+  .panel-head { align-items:flex-start; flex-direction:column; }
+}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">DangleScan<span>.io</span></div>
+  <div class="header-actions">
+    <div class="service"><span class="dot" id="db-dot"></span><span id="db-label">checking database...</span></div>
+    <a class="link-button" id="scanner-link" href="index.html">Back to Scanner</a>
+  </div>
+</header>
+
+<main>
+  <div class="eyebrow">Stored scan evidence</div>
+  <h1>Scan History</h1>
+  <p class="intro">Review completed and stopped scans, search evidence across previous results, and reopen any stored finding.</p>
+
+  <section class="search-card">
+    <div class="search-row">
+      <input id="global-search" type="search" placeholder="Search all domains, CNAMEs, providers, HTTP titles and findings..."/>
+      <button class="button primary" type="button" onclick="searchAllHistory()">Search History</button>
+    </div>
+    <div class="help">Historical search uses results already stored in the local database.</div>
+  </section>
+  <div class="error" id="error-box"></div>
+
+  <section class="panel" id="search-panel">
+    <div class="panel-head">
+      <div class="panel-title">Historical search results</div>
+      <div class="panel-meta" id="search-meta"></div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Domain</th><th>Verdict</th><th>Severity</th><th>Provider / CNAME</th><th>HTTP</th><th>Remediation</th></tr></thead>
+        <tbody id="search-results-body"></tbody>
+      </table>
+    </div>
+    <div class="empty" id="search-empty" style="display:none">No stored evidence matches this search.</div>
+  </section>
+
+  <section class="panel" id="recent-scans-panel">
+    <div class="panel-head">
+      <div class="panel-title">Recent scans</div>
+      <div style="display:flex;align-items:center;gap:9px">
+        <div class="panel-meta" id="scan-meta">0 scans</div>
+        <button class="button" type="button" onclick="loadScans()">Refresh</button>
+      </div>
+    </div>
+    <div class="toolbar">
+      <input id="scan-search" type="search" placeholder="Filter by root domain or Excel filename..."/>
+      <select id="scan-status"><option value="">Any scan status</option><option value="completed">Completed</option><option value="running">Running</option><option value="stopped">Stopped</option><option value="failed">Failed</option></select>
+      <button class="button primary" type="button" onclick="loadScans()">Run Filter</button>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Input</th><th>Started</th><th>Status</th><th>Progress</th><th>Result counts</th><th>Action</th></tr></thead>
+        <tbody id="scans-body"></tbody>
+      </table>
+    </div>
+    <div class="empty" id="scans-empty" style="display:none">No scans have been stored yet.<br/><a id="empty-scan-link" href="index.html">Run a scan using the database-enabled scanner.</a></div>
+  </section>
+
+  <section class="panel" id="results-panel">
+    <div class="panel-head">
+      <div><div class="panel-title">Stored results</div><span class="subtext" id="selected-scan-label"></span></div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <div class="panel-meta" id="result-meta"></div>
+        <button class="button" type="button" onclick="closeSelectedScan()">Close Results</button>
+      </div>
+    </div>
+    <div class="toolbar">
+      <input id="result-search" type="search" placeholder="Search this scan's evidence..."/>
+      <select id="result-category"><option value="">Any result category</option><option value="ownership_validation_required">Ownership validation required</option><option value="takeover_vulnerable">Takeover candidate</option><option value="dangling_dns">Dangling DNS</option><option value="inactive">Inactive</option><option value="clean">Clean</option></select>
+      <button class="button primary" type="button" onclick="loadSelectedScanResults()">Run Filter</button>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Domain</th><th>Verdict</th><th>Severity</th><th>Provider / CNAME</th><th>HTTP</th><th>Remediation</th></tr></thead>
+        <tbody id="scan-results-body"></tbody>
+      </table>
+    </div>
+    <div class="empty" id="results-empty" style="display:none">No results match this filter.</div>
+  </section>
+</main>
+
+<script>
+const params = new URLSearchParams(window.location.search);
+let API = params.get('api') || `http://${window.location.hostname}:8000`;
+let selectedScanId = null;
+
+function updateScannerLinks() {
+  const apiSuffix = `?api=${encodeURIComponent(API)}`;
+  document.getElementById('scanner-link').href = `index.html${apiSuffix}`;
+  document.getElementById('empty-scan-link').href = `index.html${apiSuffix}`;
+}
+
+async function resolveDatabaseApi() {
+  const candidates = params.get('api')
+    ? [params.get('api')]
+    : [
+        `http://${window.location.hostname}:8000`,
+        `http://${window.location.hostname}:8001`,
+      ];
+  for (const candidate of candidates) {
+    try {
+      const response = await fetch(`${candidate}/health`);
+      if (!response.ok) continue;
+      const health = await response.json();
+      if (health.database?.enabled) {
+        API = candidate;
+        updateScannerLinks();
+        return health;
+      }
+    } catch {}
+  }
+  throw new Error('No database-enabled backend was found on port 8000 or 8001');
+}
+
+function esc(value) {
+  return String(value ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;')
+    .replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;');
+}
+
+function dateLabel(value) {
+  if (!value) return '—';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+}
+
+function verdictLabel(value) {
+  return {clean:'Clean',inactive:'Inactive',dangling_dns:'Dangling DNS',takeover_vulnerable:'Takeover candidate',ownership_validation_required:'Ownership validation required'}[value] || value || 'Unknown';
+}
+
+function showError(message) {
+  const box = document.getElementById('error-box');
+  box.textContent = message;
+  box.style.display = message ? 'block' : 'none';
+}
+
+async function request(path, options) {
+  const response = await fetch(`${API}${path}`, options);
+  if (!response.ok) {
+    let detail = `Request failed (${response.status})`;
+    try { detail = (await response.json()).detail || detail; } catch {}
+    throw new Error(detail);
+  }
+  return response.json();
+}
+
+async function initializeHistory() {
+  try {
+    await resolveDatabaseApi();
+    document.getElementById('db-dot').className = 'dot ok';
+    document.getElementById('db-label').textContent = 'database ready';
+    showError('');
+    await loadScans();
+  } catch (error) {
+    document.getElementById('db-dot').className = 'dot err';
+    document.getElementById('db-label').textContent = 'database unavailable';
+    showError(error.message);
+  }
+}
+
+function resultRows(items) {
+  return items.map(item => {
+    const severity = item.severity || 'info';
+    const provider = item.provider || (item.cname ? 'Not identified' : 'Not applicable');
+    const http = item.http_status ?? (item.http_attempted ? 'No response' : 'Not attempted');
+    return `<tr class="clickable" onclick="openStoredResult(${Number(item.id)})" title="Open full stored evidence">
+      <td><span class="domain">${esc(item.domain)}</span><span class="subtext">Click for full details</span></td>
+      <td>${esc(verdictLabel(item.verdict))}<span class="subtext">${esc(item.reason || '')}</span></td>
+      <td><span class="badge sev-${esc(severity)}">${esc(severity)}</span></td>
+      <td>${esc(provider)}<span class="subtext">${esc(item.cname || 'No CNAME')}</span></td>
+      <td>${esc(http)}<span class="subtext">${esc(item.http_title || item.http_error || '')}</span></td>
+      <td>${esc(item.remediation_status || 'Open')}<span class="subtext">${esc(item.assigned_owner || 'Unassigned')}</span></td>
+    </tr>`;
+  }).join('');
+}
+
+async function loadScans() {
+  showError('');
+  const query = new URLSearchParams();
+  const q = document.getElementById('scan-search').value.trim();
+  const status = document.getElementById('scan-status').value;
+  if (q) query.set('q', q);
+  if (status) query.set('status', status);
+  query.set('limit', '100');
+  try {
+    const data = await request(`/history/scans?${query}`);
+    document.getElementById('scan-meta').textContent = `${data.total} scan${data.total === 1 ? '' : 's'}`;
+    const body = document.getElementById('scans-body');
+    body.innerHTML = data.items.map(scan => {
+      const risks = Number(scan.critical_count) + Number(scan.high_count) + Number(scan.medium_count);
+      return `<tr>
+        <td><span class="domain">${esc(scan.input_value)}</span><span class="subtext">${esc(scan.input_type)} · ${scan.input_total} input domain${scan.input_total === 1 ? '' : 's'}</span></td>
+        <td>${esc(dateLabel(scan.started_at))}<span class="subtext">${scan.completed_at ? `Ended ${esc(dateLabel(scan.completed_at))}` : 'In progress'}</span></td>
+        <td><span class="status status-${esc(scan.status)}">${esc(scan.status)}</span></td>
+        <td>${scan.completed_count} / ${scan.total_count || scan.input_total}<span class="subtext">${scan.discovered_count} discovered</span></td>
+        <td class="counts"><span class="count-risk">${risks} risk</span> · <span class="count-inactive">${scan.inactive_count} inactive</span> · <span class="count-clean">${scan.clean_count} clean</span></td>
+        <td><button class="button" type="button" onclick="selectScan(decodeURIComponent('${encodeURIComponent(scan.id)}'),decodeURIComponent('${encodeURIComponent(scan.input_value)}'))">View Results</button></td>
+      </tr>`;
+    }).join('');
+    document.getElementById('scans-empty').style.display = data.items.length ? 'none' : 'block';
+  } catch (error) {
+    showError(error.message);
+  }
+}
+
+async function searchAllHistory() {
+  const q = document.getElementById('global-search').value.trim();
+  if (!q) { showError('Enter a domain, CNAME, provider or finding to search.'); return; }
+  showError('');
+  try {
+    const data = await request(`/history/search?q=${encodeURIComponent(q)}&limit=500`);
+    document.getElementById('search-panel').style.display = 'block';
+    document.getElementById('search-meta').textContent = `${data.total} matching result${data.total === 1 ? '' : 's'}`;
+    document.getElementById('search-results-body').innerHTML = resultRows(data.items);
+    document.getElementById('search-empty').style.display = data.items.length ? 'none' : 'block';
+    document.getElementById('search-panel').scrollIntoView({behavior:'smooth',block:'start'});
+  } catch (error) {
+    showError(error.message);
+  }
+}
+
+async function selectScan(scanId, label) {
+  selectedScanId = scanId;
+  document.getElementById('selected-scan-label').textContent = label;
+  document.getElementById('results-panel').style.display = 'block';
+  document.getElementById('result-search').value = '';
+  document.getElementById('result-category').value = '';
+  await loadSelectedScanResults();
+  document.getElementById('results-panel').scrollIntoView({behavior:'smooth',block:'start'});
+}
+
+async function loadSelectedScanResults() {
+  if (!selectedScanId) return;
+  showError('');
+  const query = new URLSearchParams({limit:'1000'});
+  const q = document.getElementById('result-search').value.trim();
+  const verdict = document.getElementById('result-category').value;
+  if (q) query.set('q', q);
+  if (verdict) query.set('verdict', verdict);
+  try {
+    const data = await request(`/history/scans/${encodeURIComponent(selectedScanId)}/results?${query}`);
+    document.getElementById('result-meta').textContent = `${data.total} stored result${data.total === 1 ? '' : 's'}`;
+    document.getElementById('scan-results-body').innerHTML = resultRows(data.items);
+    document.getElementById('results-empty').style.display = data.items.length ? 'none' : 'block';
+  } catch (error) {
+    showError(error.message);
+  }
+}
+
+function closeSelectedScan() {
+  selectedScanId = null;
+  document.getElementById('results-panel').style.display = 'none';
+  document.getElementById('scan-results-body').innerHTML = '';
+  document.getElementById('result-search').value = '';
+  document.getElementById('result-category').value = '';
+  document.getElementById('recent-scans-panel').scrollIntoView({behavior:'smooth', block:'start'});
+}
+
+async function openStoredResult(resultId) {
+  showError('');
+  try {
+    const stored = await request(`/history/results/${resultId}`);
+    const result = stored.evidence || {};
+    result.result_id = stored.id;
+    result.remediation_status = stored.remediation_status;
+    result.assigned_owner = stored.assigned_owner;
+    result.analyst_comment = stored.analyst_comment;
+    const key = `danglescan-history-${resultId}-${Date.now()}`;
+    localStorage.setItem(key, JSON.stringify(result));
+    const detailWindow = window.open('', '_blank');
+    if (!detailWindow) { localStorage.removeItem(key); throw new Error('Allow pop-ups to open stored finding details.'); }
+    detailWindow.location.replace(`detail.html?key=${encodeURIComponent(key)}&api=${encodeURIComponent(API)}`);
+  } catch (error) {
+    showError(error.message);
+  }
+}
+
+document.getElementById('global-search').addEventListener('keydown', event => {
+  if (event.key === 'Enter') searchAllHistory();
+});
+document.getElementById('scan-search').addEventListener('keydown', event => {
+  if (event.key === 'Enter') loadScans();
+});
+document.getElementById('result-search').addEventListener('keydown', event => {
+  if (event.key === 'Enter') loadSelectedScanResults();
+});
+
+initializeHistory();
+</script>
+</body>
+</html>

@@ -10,16 +10,23 @@ import signal
 import socket
 import time
 from typing import AsyncGenerator, Optional
+from urllib.parse import urlparse
 
 import dns.resolver
 import httpx
 import openpyxl
+import database as db
 from openai import OpenAI
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field
+
+from screenshots import router as screenshot_router, capture_page
 
 app = FastAPI(title="Subdomain Takeover Scanner")
+app.include_router(screenshot_router)
+db.initialize_database()
 
 app.add_middleware(
     CORSMiddleware,
@@ -28,44 +35,224 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Known takeover fingerprints
-TAKEOVER_SIGNATURES = {
-    "there isn't a github pages site here": ("GitHub Pages", "critical"),
-    "for root domain use an a record": ("GitHub Pages", "critical"),
-    "nosuchbucket": ("AWS S3", "critical"),
-    "the specified bucket does not exist": ("AWS S3", "critical"),
-    "no such bucket": ("AWS S3", "critical"),
-    "fastly error: unknown domain": ("Fastly", "critical"),
-    "this shop is currently unavailable": ("Shopify", "high"),
-    "no settings were found for this company": ("HubSpot", "high"),
-    "project not found": ("Netlify", "critical"),
-    "404 not found": ("Generic", "medium"),
-    "domain not configured": ("Generic", "high"),
-    "this domain is for sale": ("Parked", "high"),
-    "this page is parked": ("Parked", "high"),
-    "page not found on bitbucket": ("Bitbucket", "critical"),
-    "the feed has not been found": ("Tumblr", "high"),
-    "whatever you were looking for doesn't currently exist": ("Tumblr", "high"),
-    "help center closed": ("Zendesk", "critical"),
-    "this helpdesk site is currently unavailable": ("UserVoice", "high"),
-    "mybucket.s3.amazonaws.com": ("AWS S3 CNAME", "critical"),
-    ".azurewebsites.net": ("Azure", "high"),
-    ".cloudfront.net": ("CloudFront", "medium"),
-    "heroku | no such app": ("Heroku", "critical"),
-    "no such app": ("Heroku", "critical"),
-    "there's nothing here": ("Generic", "medium"),
+AWS_S3_HOST_PATTERNS = (
+    r"(?:^|\.)s3(?:[.-][a-z0-9-]+)?\.amazonaws\.com$",
+    r"(?:^|\.)s3-website[.-][a-z0-9-]+\.amazonaws\.com$",
+)
+
+# Provider-scoped takeover fingerprints. A response string is only considered
+# evidence when the hostname also points to the matching provider. This avoids
+# treating generic error pages such as "404 Not Found" as takeover findings.
+TAKEOVER_SIGNATURES = (
+    {
+        "provider": "AWS S3",
+        "cname_patterns": AWS_S3_HOST_PATTERNS,
+        "fingerprints": ("the specified bucket does not exist", "<code>nosuchbucket</code>"),
+        "severity": "critical",
+        "verdict": "takeover_vulnerable",
+        "confidence": 95,
+    },
+    {
+        "provider": "Agile CRM",
+        "cname_patterns": (r"\.agilecrm\.com$",),
+        "fingerprints": ("sorry, this page is no longer available.",),
+        "severity": "high",
+        "verdict": "takeover_vulnerable",
+        "confidence": 90,
+    },
+    {
+        "provider": "Bitbucket",
+        "cname_patterns": (r"\.bitbucket\.io$",),
+        "fingerprints": ("repository not found",),
+        "severity": "high",
+        "verdict": "takeover_vulnerable",
+        "confidence": 90,
+    },
+    {
+        "provider": "Gemfury",
+        "cname_patterns": (r"\.furyns\.com$",),
+        "fingerprints": ("404: this page could not be found.",),
+        "severity": "high",
+        "verdict": "takeover_vulnerable",
+        "confidence": 90,
+    },
+    {
+        "provider": "Ghost",
+        "cname_patterns": (r"\.ghost\.io$",),
+        "fingerprints": ("site unavailable.", "failed to resolve dns path for this host"),
+        "severity": "high",
+        "verdict": "takeover_vulnerable",
+        "confidence": 90,
+    },
+    {
+        "provider": "Help Scout",
+        "cname_patterns": (r"\.helpscoutdocs\.com$",),
+        "fingerprints": ("no settings were found for this company:",),
+        "severity": "high",
+        "verdict": "takeover_vulnerable",
+        "confidence": 90,
+    },
+    {
+        "provider": "Ngrok",
+        "cname_patterns": (r"\.ngrok\.io$",),
+        "fingerprints": ("tunnel ", "ngrok.io not found"),
+        "match_all": True,
+        "severity": "high",
+        "verdict": "takeover_vulnerable",
+        "confidence": 90,
+    },
+    {
+        "provider": "Pantheon",
+        "cname_patterns": (r"\.pantheonsite\.io$",),
+        "fingerprints": ("404 error unknown site!",),
+        "severity": "high",
+        "verdict": "takeover_vulnerable",
+        "confidence": 90,
+    },
+    {
+        "provider": "ReadMe",
+        "cname_patterns": (r"\.readme\.io$",),
+        "fingerprints": ("the creators of this project are still working on making everything perfect!",),
+        "severity": "high",
+        "verdict": "takeover_vulnerable",
+        "confidence": 90,
+    },
+    {
+        "provider": "Strikingly",
+        "cname_patterns": (r"\.strikinglydns\.com$",),
+        "fingerprints": ("page not found.",),
+        "severity": "high",
+        "verdict": "takeover_vulnerable",
+        "confidence": 90,
+    },
+    {
+        "provider": "Surge",
+        "cname_patterns": (r"\.surge\.sh$",),
+        "fingerprints": ("project not found",),
+        "severity": "high",
+        "verdict": "takeover_vulnerable",
+        "confidence": 90,
+    },
+    {
+        "provider": "WordPress.com",
+        "cname_patterns": (r"\.wordpress\.com$",),
+        "fingerprints": ("do you want to register", "wordpress.com?"),
+        "match_all": True,
+        "severity": "high",
+        "verdict": "takeover_vulnerable",
+        "confidence": 90,
+    },
+    {
+        "provider": "GitHub Pages",
+        "cname_patterns": (r"\.github\.io$",),
+        "fingerprints": ("there isn't a github pages site here.",),
+        "severity": "high",
+        "verdict": "dangling_dns",
+        "confidence": 85,
+    },
+    {
+        "provider": "Heroku",
+        "cname_patterns": (r"\.herokuapp\.com$",),
+        "fingerprints": ("no such app",),
+        "severity": "high",
+        "verdict": "dangling_dns",
+        "confidence": 85,
+    },
+    {
+        "provider": "Netlify",
+        "cname_patterns": (r"\.(?:netlify\.app|netlify\.com)$",),
+        "fingerprints": ("not found - request id:",),
+        "severity": "high",
+        "verdict": "dangling_dns",
+        "confidence": 85,
+    },
+    {
+        "provider": "Shopify",
+        "cname_patterns": (r"\.myshopify\.com$",),
+        "fingerprints": ("sorry, this shop is currently unavailable.",),
+        "severity": "high",
+        "verdict": "dangling_dns",
+        "confidence": 85,
+    },
+    {
+        "provider": "Tumblr",
+        "cname_patterns": (r"\.tumblr\.com$",),
+        "fingerprints": ("whatever you were looking for doesn't currently exist at this address",),
+        "severity": "high",
+        "verdict": "dangling_dns",
+        "confidence": 85,
+    },
+    {
+        "provider": "Vercel",
+        "cname_patterns": (r"\.(?:vercel\.app|vercel-dns\.com)$",),
+        "fingerprints": ("deployment_not_found",),
+        "severity": "high",
+        "verdict": "dangling_dns",
+        "confidence": 85,
+    },
+    {
+        "provider": "Webflow",
+        "cname_patterns": (r"\.webflow\.io$",),
+        "fingerprints": ("the page you are looking for doesn't exist or has been moved.",),
+        "severity": "high",
+        "verdict": "dangling_dns",
+        "confidence": 85,
+    },
+)
+
+# Known organization-controlled authentication destinations. Keep this list
+# hostname-specific: trusting all of okta.com/oktapreview.com would allow an
+# unrelated tenant to hide a malicious redirect.
+DEFAULT_REDIRECT_DOMAIN_ALLOWLIST = {
+    "condenast-hub.okta-emea.com",
+    "condenast-hub.oktapreview.com",
+    "conde.io",
+    "condenast.com",
+    "www.condenast.com",
 }
 
+# Organisation-controlled redirect services. A cross-domain destination is
+# expected when the scanned hostname deliberately uses one of these CNAMEs.
+TRUSTED_REDIRECT_CNAME_PATTERNS = (
+    r"^redirects\.conde\.io$",
+)
+
+# Some cloud services redirect from a global endpoint to a regional endpoint.
+# This remains inside the same verified provider and is not an ownership change.
+# Both the configured CNAME and final hostname must match the provider patterns.
+TRUSTED_PROVIDER_REDIRECTS = (
+    {
+        "provider": "AWS S3",
+        "cname_patterns": AWS_S3_HOST_PATTERNS,
+        "final_host_patterns": AWS_S3_HOST_PATTERNS,
+    },
+)
+
+# Cross-domain redirects alone are not takeover proof. These signals raise a
+# redirect to High; redirects without them remain visible for manual review.
+SUSPICIOUS_REDIRECT_SIGNALS = (
+    "security clearance",
+    "elite vault",
+    "casino",
+    "betting",
+    "gambling",
+    "slot gacor",
+    "jackpot",
+    "crypto giveaway",
+    "claim reward",
+)
+
 CLOUD_CNAME_PATTERNS = [
-    (r"\.s3\.amazonaws\.com$", "AWS S3"),
-    (r"\.s3-website.*\.amazonaws\.com$", "AWS S3 Website"),
+    *((pattern, "AWS S3") for pattern in AWS_S3_HOST_PATTERNS),
     (r"\.azurewebsites\.net$", "Azure Web Apps"),
     (r"\.azureedge\.net$", "Azure CDN"),
     (r"\.cloudfront\.net$", "AWS CloudFront"),
     (r"\.herokuapp\.com$", "Heroku"),
     (r"\.github\.io$", "GitHub Pages"),
     (r"\.netlify\.app$", "Netlify"),
+    (r"\.netlify\.com$", "Netlify"),
     (r"\.vercel\.app$", "Vercel"),
+    (r"\.vercel-dns\.com$", "Vercel"),
     (r"\.pantheonsite\.io$", "Pantheon"),
     (r"\.shopifypreview\.com$", "Shopify"),
     (r"\.myshopify\.com$", "Shopify"),
@@ -76,6 +263,14 @@ CLOUD_CNAME_PATTERNS = [
     (r"\.zendesk\.com$", "Zendesk"),
     (r"\.hubspot\.com$", "HubSpot"),
     (r"\.helpscoutdocs\.com$", "HelpScout"),
+    (r"\.agilecrm\.com$", "Agile CRM"),
+    (r"\.bitbucket\.io$", "Bitbucket"),
+    (r"\.furyns\.com$", "Gemfury"),
+    (r"\.ngrok\.io$", "Ngrok"),
+    (r"\.readme\.io$", "ReadMe"),
+    (r"\.strikinglydns\.com$", "Strikingly"),
+    (r"\.tumblr\.com$", "Tumblr"),
+    (r"\.wordpress\.com$", "WordPress.com"),
 ]
 
 
@@ -95,52 +290,210 @@ def parse_domains_from_excel(content: bytes) -> list[str]:
 
 def resolve_dns(domain: str) -> dict:
     result = {"has_a": False, "has_cname": False, "cname_target": None,
-              "a_records": [], "resolves": False, "nxdomain": False}
+              "a_records": [], "aaaa_records": [], "resolves": False,
+              "nxdomain": False, "cname_target_nxdomain": False,
+              "record_types": [], "resolution_status": "Unknown",
+              "query_errors": {}}
     resolver = dns.resolver.Resolver()
     resolver.timeout = 3
     resolver.lifetime = 3
+
+    def remember_error(record_type: str, exc: Exception) -> None:
+        if isinstance(exc, dns.resolver.Timeout):
+            label = "Timeout"
+        elif isinstance(exc, dns.resolver.NoNameservers):
+            label = "SERVFAIL / no nameservers available"
+        else:
+            label = type(exc).__name__
+        result["query_errors"][record_type] = label
+
+    def add_record_type(record_type: str) -> None:
+        if record_type not in result["record_types"]:
+            result["record_types"].append(record_type)
+
+    def resolve_cname_target(initial_target: str) -> None:
+        """Follow a discovered CNAME and explicitly validate its destination."""
+        current_target = initial_target.rstrip(".")
+        visited = set()
+
+        # Protect the scan from malformed or cyclic CNAME chains.
+        for _ in range(10):
+            normalized_target = current_target.lower()
+            if normalized_target in visited:
+                result["query_errors"]["CNAME target"] = "CNAME loop detected"
+                return
+            visited.add(normalized_target)
+
+            next_target = None
+            try:
+                answers = resolver.resolve(current_target, "CNAME")
+                next_target = str(answers[0].target).rstrip(".")
+            except dns.resolver.NXDOMAIN:
+                result["cname_target_nxdomain"] = True
+                return
+            except dns.resolver.NoAnswer:
+                pass
+            except Exception as exc:
+                remember_error("CNAME target CNAME", exc)
+
+            try:
+                answers = resolver.resolve(current_target, "A")
+                result["has_a"] = True
+                result["a_records"] = [str(record) for record in answers]
+                result["resolves"] = True
+                add_record_type("A")
+                return
+            except dns.resolver.NXDOMAIN:
+                result["cname_target_nxdomain"] = True
+                return
+            except dns.resolver.NoAnswer:
+                pass
+            except Exception as exc:
+                remember_error("CNAME target A", exc)
+
+            try:
+                answers = resolver.resolve(current_target, "AAAA")
+                result["aaaa_records"] = [str(record) for record in answers]
+                result["resolves"] = True
+                add_record_type("AAAA")
+                return
+            except dns.resolver.NXDOMAIN:
+                result["cname_target_nxdomain"] = True
+                return
+            except dns.resolver.NoAnswer:
+                pass
+            except Exception as exc:
+                remember_error("CNAME target AAAA", exc)
+
+            if not next_target:
+                return
+            current_target = next_target
+
+        result["query_errors"]["CNAME target"] = "CNAME chain exceeded 10 links"
 
     try:
         answers = resolver.resolve(domain, "CNAME")
         result["has_cname"] = True
         result["cname_target"] = str(answers[0].target).rstrip(".")
-        result["resolves"] = True
+        add_record_type("CNAME")
     except dns.resolver.NXDOMAIN:
         result["nxdomain"] = True
+        result["resolution_status"] = "NXDOMAIN"
         return result
-    except Exception:
+    except dns.resolver.NoAnswer:
         pass
+    except Exception as exc:
+        remember_error("CNAME", exc)
 
     try:
         answers = resolver.resolve(domain, "A")
         result["has_a"] = True
         result["a_records"] = [str(r) for r in answers]
         result["resolves"] = True
+        add_record_type("A")
     except dns.resolver.NXDOMAIN:
-        result["nxdomain"] = True
-    except Exception:
+        if result["has_cname"]:
+            result["cname_target_nxdomain"] = True
+        else:
+            result["nxdomain"] = True
+    except dns.resolver.NoAnswer:
         pass
+    except Exception as exc:
+        remember_error("A", exc)
+
+    if not result["resolves"] and not result["nxdomain"] and not result["cname_target_nxdomain"]:
+        try:
+            answers = resolver.resolve(domain, "AAAA")
+            result["aaaa_records"] = [str(r) for r in answers]
+            result["resolves"] = True
+            add_record_type("AAAA")
+        except dns.resolver.NXDOMAIN:
+            if result["has_cname"]:
+                result["cname_target_nxdomain"] = True
+            else:
+                result["nxdomain"] = True
+        except dns.resolver.NoAnswer:
+            pass
+        except Exception as exc:
+            remember_error("AAAA", exc)
+
+    # Some resolvers return the original CNAME as a successful NOERROR answer
+    # but do not raise NXDOMAIN while resolving the original name's A/AAAA
+    # records. Validate the actual destination explicitly so a broken target
+    # cannot fall through to the default Clean verdict.
+    if (
+        result["has_cname"]
+        and result["cname_target"]
+        and not result["resolves"]
+        and not result["nxdomain"]
+        and not result["cname_target_nxdomain"]
+    ):
+        resolve_cname_target(result["cname_target"])
+
+    if result["nxdomain"]:
+        result["resolution_status"] = "NXDOMAIN"
+    elif result["cname_target_nxdomain"]:
+        result["resolution_status"] = "CNAME target NXDOMAIN"
+    elif result["resolves"]:
+        result["resolution_status"] = "Resolved"
+    elif result["query_errors"]:
+        errors = set(result["query_errors"].values())
+        result["resolution_status"] = (
+            "DNS query failed: " + ", ".join(sorted(errors))
+        )
+    elif result["has_cname"]:
+        result["resolution_status"] = "CNAME found; no A/AAAA answer"
+    else:
+        result["resolution_status"] = "No A/AAAA/CNAME answer"
 
     return result
 
 
 async def fetch_http(domain: str) -> dict:
-    result = {"status": None, "title": None, "body_snippet": "", "error": None}
+    result = {"attempted": False, "status": None, "title": None,
+              "body_snippet": "", "url": None, "error": None,
+              "tls_error": None}
+    errors = []
     for scheme in ["https", "http"]:
+        requested_url = f"{scheme}://{domain}"
+        result["attempted"] = True
+        if scheme == "https":
+            try:
+                async with httpx.AsyncClient(timeout=8, follow_redirects=True) as verified_client:
+                    resp = await verified_client.get(
+                        requested_url,
+                        headers={"User-Agent": "Mozilla/5.0"},
+                    )
+                result["status"] = resp.status_code
+                result["url"] = str(resp.url)
+                body = resp.text[:3000]
+                result["body_snippet"] = body
+                title_match = re.search(r"<title[^>]*>(.*?)</title>", body, re.IGNORECASE | re.DOTALL)
+                if title_match:
+                    result["title"] = title_match.group(1).strip()[:100]
+                return result
+            except Exception as e:
+                message = str(e).strip() or type(e).__name__
+                lowered = message.lower()
+                if any(token in lowered for token in ("certificate", "ssl", "tls", "hostname mismatch")):
+                    result["tls_error"] = message[:240]
         try:
             async with httpx.AsyncClient(timeout=8, follow_redirects=True,
                                          verify=False) as client:
-                resp = await client.get(f"{scheme}://{domain}",
+                resp = await client.get(requested_url,
                                         headers={"User-Agent": "Mozilla/5.0"})
                 result["status"] = resp.status_code
+                result["url"] = str(resp.url)
                 body = resp.text[:3000]
-                result["body_snippet"] = body[:500]
+                result["body_snippet"] = body
                 title_match = re.search(r"<title[^>]*>(.*?)</title>", body, re.IGNORECASE | re.DOTALL)
                 if title_match:
                     result["title"] = title_match.group(1).strip()[:100]
                 return result
         except Exception as e:
-            result["error"] = str(e)[:100]
+            message = str(e).strip() or type(e).__name__
+            errors.append(f"{scheme.upper()}: {message[:140]}")
+    result["error"] = " | ".join(errors) or "No HTTP response"
     return result
 
 
@@ -150,44 +503,193 @@ def rule_based_analysis(domain: str, dns_info: dict, http_info: dict) -> dict:
     provider = None
     reason = "No issues detected"
     confidence = 0
+    fingerprints_checked: list[str] = []
+    matched_fingerprint = None
 
-    # NXDOMAIN with no resolution = dangling
+    # NXDOMAIN for the queried hostname means there is no active DNS pointer.
     if dns_info["nxdomain"]:
-        verdict = "dangling_dns"
-        severity = "high"
-        reason = "Domain returns NXDOMAIN — DNS record exists but target does not resolve"
-        confidence = 85
+        verdict = "inactive"
+        reason = "Hostname returns NXDOMAIN — no active DNS record was found"
 
     # Check CNAME points to known cloud provider
     cname = dns_info.get("cname_target", "") or ""
+    cname_target_nxdomain = dns_info.get("cname_target_nxdomain", False)
     for pattern, prov in CLOUD_CNAME_PATTERNS:
         if re.search(pattern, cname, re.IGNORECASE):
             provider = prov
-            if not dns_info["has_a"] and not dns_info["resolves"]:
+            if cname_target_nxdomain:
                 verdict = "dangling_dns"
-                severity = "critical"
-                reason = f"CNAME points to {prov} ({cname}) but does not resolve — likely abandoned resource"
+                severity = "high"
+                reason = f"CNAME points to {prov} ({cname}), but the target returns NXDOMAIN"
                 confidence = 90
             break
 
-    # Check HTTP body for takeover signatures
+    if cname and cname_target_nxdomain and verdict == "clean":
+        verdict = "dangling_dns"
+        severity = "high"
+        reason = f"CNAME exists, but its target ({cname}) returns NXDOMAIN"
+        confidence = 85
+
+    # Check provider-scoped HTTP takeover signatures.
     body = (http_info.get("body_snippet") or "").lower()
-    for sig, (prov, sev) in TAKEOVER_SIGNATURES.items():
-        if sig in body:
-            verdict = "takeover_vulnerable"
-            severity = sev
-            provider = prov
-            reason = f"Page contains takeover fingerprint for {prov}: '{sig}'"
-            confidence = 95
+    title = (http_info.get("title") or "").lower()
+    for signature in TAKEOVER_SIGNATURES:
+        cname_matches = any(
+            re.search(pattern, cname, re.IGNORECASE)
+            for pattern in signature["cname_patterns"]
+        )
+        fingerprints = signature["fingerprints"]
+        if cname_matches:
+            fingerprints_checked = list(fingerprints)
+        if signature.get("match_all"):
+            body_matches = all(fingerprint in body for fingerprint in fingerprints)
+            if cname_matches and body_matches:
+                matched_fingerprint = " AND ".join(fingerprints)
+        else:
+            matched_fingerprint = next(
+                (fingerprint for fingerprint in fingerprints if fingerprint in body),
+                None,
+            ) if cname_matches else None
+            body_matches = matched_fingerprint is not None
+
+        if cname_matches and body_matches:
+            verdict = signature["verdict"]
+            severity = signature["severity"]
+            provider = signature["provider"]
+            reason = (
+                f"Provider-specific takeover fingerprint detected for {provider}; "
+                f"manual ownership validation is required"
+            )
+            confidence = signature["confidence"]
             break
 
-    # HTTP errors on cloud-pointed domains
-    if http_info.get("status") in [404, 410] and cname:
-        if verdict == "clean":
-            verdict = "dangling_dns"
+    # Live third-party storefront abuse can be a critical risk even when the DNS
+    # record is valid and the host is not NXDOMAIN. Guard against a malicious
+    # Shopify branded page impersonating a legitimate brand (for example,
+    # a Vogue-owned subdomain serving a third-party marketplace storefront).
+    if re.search(r"\.myshopify\.com$", cname, re.IGNORECASE):
+        text = f"{title} {body}".lower()
+        has_marketplace_signal = any(token in text for token in ("marketplace", "langganan", "subscription", "koleksi"))
+        has_price_signal = any(token in text for token in ("price", "harga", "rp ", "idr ", "usd ", "$"))
+        has_brand_signal = any(token in text for token in ("vogue", "fashion", "italia", "magazine", "brand"))
+        has_third_party_signal = any(token in text for token in ("mahkota", "reseller", "shop", "premium", "collector"))
+        status = http_info.get("status")
+        if (
+            isinstance(status, int)
+            and 200 <= status < 400
+            and has_marketplace_signal
+            and has_price_signal
+            and has_brand_signal
+            and has_third_party_signal
+        ):
+            verdict = "takeover_vulnerable"
+            severity = "critical"
+            provider = "Shopify"
+            reason = (
+                f"Live Shopify storefront impersonates a legitimate brand on {domain}; "
+                f"manual ownership validation and remediation required"
+            )
+            confidence = 95
+
+    # A resolving hostname can still be compromised or abandoned. Flag an
+    # unexpected redirect to an unrelated hostname instead of treating the
+    # final HTTP 200 response as clean. Legitimate external destinations can
+    # be supplied as a comma-separated list in REDIRECT_DOMAIN_ALLOWLIST.
+    final_url = http_info.get("url") or ""
+    final_hostname = (urlparse(final_url).hostname or "").lower().rstrip(".")
+    requested_hostname = domain.lower().rstrip(".")
+    allowed_redirect_hosts = DEFAULT_REDIRECT_DOMAIN_ALLOWLIST | {
+        host.strip().lower().rstrip(".")
+        for host in os.getenv("REDIRECT_DOMAIN_ALLOWLIST", "").split(",")
+        if host.strip()
+    }
+
+    def same_domain_family(left: str, right: str) -> bool:
+        if not left or not right:
+            return True
+        if left == right or left.endswith(f".{right}") or right.endswith(f".{left}"):
+            return True
+        # Treat sibling hostnames below the same conventional registrable
+        # domain as related (for example, app.example.com -> www.example.com).
+        left_parts = left.split(".")
+        right_parts = right.split(".")
+        return len(left_parts) >= 2 and len(right_parts) >= 2 and left_parts[-2:] == right_parts[-2:]
+
+    redirect_is_allowed = any(
+        final_hostname == allowed or final_hostname.endswith(f".{allowed}")
+        for allowed in allowed_redirect_hosts
+    )
+    redirect_service_is_trusted = any(
+        re.search(pattern, cname, re.IGNORECASE)
+        for pattern in TRUSTED_REDIRECT_CNAME_PATTERNS
+    )
+    provider_internal_redirect = next(
+        (
+            item["provider"]
+            for item in TRUSTED_PROVIDER_REDIRECTS
+            if any(
+                re.search(pattern, cname, re.IGNORECASE)
+                for pattern in item["cname_patterns"]
+            )
+            and any(
+                re.search(pattern, final_hostname, re.IGNORECASE)
+                for pattern in item["final_host_patterns"]
+            )
+        ),
+        None,
+    )
+    if verdict == "clean" and provider_internal_redirect:
+        status = http_info.get("status")
+        tls_error = http_info.get("tls_error")
+        if provider_internal_redirect == "AWS S3" and (
+            tls_error or (isinstance(status, int) and status >= 400)
+        ):
+            verdict = "configuration_issue"
+            severity = "info"
+            issue_parts = []
+            if tls_error:
+                issue_parts.append("HTTPS certificate validation failed for the custom hostname")
+            if isinstance(status, int) and status >= 400:
+                issue_parts.append(f"the regional AWS S3 endpoint returned HTTP {status}")
+            issue_text = "; ".join(issue_parts)
+            reason = (
+                f"AWS S3 configuration issue: {issue_text}. The bucket endpoint exists and "
+                "no missing-bucket takeover fingerprint was detected. Review the S3 region, "
+                "custom-domain or website-endpoint mapping, access policy, and TLS certificate."
+            )
+        else:
+            reason = (
+                f"Expected {provider_internal_redirect} internal redirect; "
+                "no takeover fingerprint was detected"
+            )
+    if (
+        verdict == "clean"
+        and final_hostname
+        and not same_domain_family(requested_hostname, final_hostname)
+        and not redirect_is_allowed
+        and not redirect_service_is_trusted
+        and not provider_internal_redirect
+    ):
+        redirect_evidence = f"{final_hostname} {title} {body}".lower()
+        has_suspicious_redirect_signal = any(
+            signal in redirect_evidence for signal in SUSPICIOUS_REDIRECT_SIGNALS
+        )
+        if has_suspicious_redirect_signal:
+            verdict = "suspicious_redirect"
             severity = "high"
-            reason = f"CNAME to {cname} returns {http_info['status']} — resource may be deleted"
-            confidence = 75
+            reason = (
+                f"Request for {requested_hostname} redirects to unrelated host "
+                f"{final_hostname} with suspicious content; validate for compromise or an unauthorized redirect"
+            )
+            confidence = 90
+        else:
+            verdict = "ownership_validation_required"
+            severity = "medium"
+            reason = (
+                f"Request for {requested_hostname} redirects to external host "
+                f"{final_hostname}; confirm that this destination is authorised"
+            )
+            confidence = 50
 
     return {
         "verdict": verdict,
@@ -195,7 +697,84 @@ def rule_based_analysis(domain: str, dns_info: dict, http_info: dict) -> dict:
         "provider": provider,
         "reason": reason,
         "confidence": confidence,
+        "fingerprint_evidence": {
+            "checked": fingerprints_checked,
+            "matched": matched_fingerprint,
+            "status": (
+                "matched"
+                if matched_fingerprint
+                else "not_detected"
+                if fingerprints_checked
+                else "not_applicable"
+            ),
+        },
     }
+
+
+def apply_historical_change_detection(
+    result: dict,
+    previous: Optional[dict],
+) -> dict:
+    """Flag an unresolved dangling CNAME that unexpectedly becomes reachable."""
+    if not previous or result.get("verdict") != "clean":
+        return result
+
+    previous_evidence = previous.get("evidence") or {}
+    previous_dns = previous_evidence.get("dns") or {}
+    current_dns = result.get("dns") or {}
+    current_http = result.get("http") or {}
+    previous_verdict = previous.get("verdict") or previous_evidence.get("verdict")
+    remediation_status = previous.get("remediation_status") or "Open"
+
+    previous_was_dangling = (
+        previous_verdict == "dangling_dns"
+        and bool(previous_dns.get("cname_target_nxdomain"))
+    )
+    previous_validation_open = previous_verdict == "ownership_validation_required"
+    if not (previous_was_dangling or previous_validation_open):
+        return result
+    if remediation_status in {"Resolved", "False Positive"}:
+        return result
+
+    previous_cname = str(previous_dns.get("cname") or previous.get("cname") or "").lower().rstrip(".")
+    current_cname = str(current_dns.get("cname") or "").lower().rstrip(".")
+    if not previous_cname or previous_cname != current_cname:
+        return result
+
+    http_status = current_http.get("status")
+    http_success = isinstance(http_status, int) and 200 <= http_status < 400
+    if not current_dns.get("resolves") or not http_success:
+        return result
+
+    original_dangling = previous_evidence.get("history_evidence") or {
+        "previous_result_id": previous.get("id"),
+        "previous_scan_id": previous.get("scan_id"),
+        "previous_created_at": previous.get("created_at"),
+        "previous_verdict": previous_verdict,
+        "previous_severity": previous.get("severity") or previous_evidence.get("severity"),
+        "previous_dns_state": previous_dns.get("resolution_status"),
+        "previous_cname": previous_cname,
+        "previous_cname_target_nxdomain": bool(previous_dns.get("cname_target_nxdomain")),
+        "previous_remediation_status": remediation_status,
+    }
+    result["history_evidence"] = {
+        **original_dangling,
+        "compared_result_id": previous.get("id"),
+        "compared_created_at": previous.get("created_at"),
+        "current_dns_state": current_dns.get("resolution_status"),
+        "current_cname": current_cname,
+        "current_http_status": http_status,
+        "current_http_url": current_http.get("url"),
+        "change": "Previously dangling CNAME target now resolves without recorded remediation",
+    }
+    result["verdict"] = "ownership_validation_required"
+    result["severity"] = "high"
+    result["confidence"] = 80
+    result["reason"] = (
+        f"Previously dangling CNAME target ({current_cname}) now resolves and returns "
+        f"HTTP {http_status} without recorded remediation; verify resource ownership"
+    )
+    return result
 
 
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5.2")
@@ -472,18 +1051,22 @@ async def scan_domain(domain: str, use_ai: bool = True) -> dict:
     dns_info = await asyncio.to_thread(resolve_dns, domain)
 
     # HTTP fetch (skip if NXDOMAIN)
-    http_info = {"status": None, "title": None, "body_snippet": "", "error": "Skipped"}
+    http_info = {"attempted": False, "status": None, "title": None,
+                 "body_snippet": "", "url": None,
+                 "error": "Not attempted because DNS did not resolve",
+                 "tls_error": None}
     if not dns_info["nxdomain"] and dns_info["resolves"]:
         http_info = await fetch_http(domain)
 
     # Rule-based analysis
     rule_result = rule_based_analysis(domain, dns_info, http_info)
 
-    # AI analysis only for non-clean findings
+    # AI analysis only for actionable findings
     ai_analysis = None
-    if use_ai and rule_result["verdict"] != "clean":
+    if use_ai and rule_result["verdict"] not in {"clean", "inactive", "configuration_issue"}:
         ai_analysis = await ask_codex(domain, dns_info, http_info, rule_result)
 
+    screenshot = await capture_page(domain, dns_info)
     elapsed = round(time.time() - start, 2)
 
     return {
@@ -491,19 +1074,39 @@ async def scan_domain(domain: str, use_ai: bool = True) -> dict:
         "verdict": rule_result["verdict"],
         "severity": rule_result["severity"],
         "provider": rule_result["provider"],
+        "provider_evidence": (
+            f"Identified from CNAME: {dns_info['cname_target']}"
+            if rule_result["provider"]
+            else (
+                "No CNAME record; provider identification is not applicable"
+                if not dns_info["cname_target"]
+                else "CNAME does not match a provider in the takeover-signature database"
+            )
+        ),
         "reason": rule_result["reason"],
         "confidence": rule_result["confidence"],
+        "fingerprint_evidence": rule_result["fingerprint_evidence"],
         "ai_analysis": ai_analysis,
         "dns": {
             "resolves": dns_info["resolves"],
             "nxdomain": dns_info["nxdomain"],
             "cname": dns_info["cname_target"],
+            "cname_target_nxdomain": dns_info.get("cname_target_nxdomain", False),
             "a_records": dns_info["a_records"],
+            "aaaa_records": dns_info.get("aaaa_records", []),
+            "record_types": dns_info.get("record_types", []),
+            "resolution_status": dns_info.get("resolution_status", "Unknown"),
+            "query_errors": dns_info.get("query_errors", {}),
         },
         "http": {
+            "attempted": http_info.get("attempted", False),
             "status": http_info["status"],
             "title": http_info["title"],
+            "url": http_info.get("url"),
+            "error": http_info.get("error"),
+            "tls_error": http_info.get("tls_error"),
         },
+        "screenshot": screenshot,
         "scan_time_s": elapsed,
     }
 
@@ -674,6 +1277,95 @@ async def stream_scan(domains: list[str], use_ai: bool, use_enum: bool) -> Async
         await asyncio.gather(queue_task, *producers, *scan_tasks, return_exceptions=True)
 
 
+async def persisted_stream_scan(
+    scan_id: str,
+    domains: list[str],
+    use_ai: bool,
+    use_enum: bool,
+) -> AsyncGenerator[str, None]:
+    """Persist each SSE event without changing enumeration or detection logic."""
+    terminal_status_written = False
+    completed_count = 0
+    total_count = len(domains)
+    discovered_count = 0
+
+    try:
+        async for chunk in stream_scan(domains, use_ai, use_enum):
+            raw_payload = chunk[6:].strip() if chunk.startswith("data: ") else ""
+            payload = json.loads(raw_payload) if raw_payload else {}
+            payload["scan_id"] = scan_id
+            event_type = payload.get("type")
+
+            if event_type == "start":
+                total_count = int(payload.get("total") or total_count)
+                await asyncio.to_thread(
+                    db.update_scan_totals,
+                    scan_id,
+                    total_count=total_count,
+                    discovered_count=max(0, total_count - len(domains)),
+                )
+            elif event_type == "result":
+                completed_count = int(payload.get("completed") or completed_count)
+                total_count = int(payload.get("total") or total_count)
+                previous_result = await asyncio.to_thread(
+                    db.get_latest_result_for_domain,
+                    payload["result"]["domain"],
+                    exclude_scan_id=scan_id,
+                )
+                payload["result"] = apply_historical_change_detection(
+                    payload["result"],
+                    previous_result,
+                )
+                result_id = await asyncio.to_thread(
+                    db.save_scan_result,
+                    scan_id,
+                    payload["result"],
+                    completed_count=completed_count,
+                    total_count=total_count,
+                )
+                payload["result"]["result_id"] = result_id
+            elif event_type == "done":
+                completed_count = int(payload.get("completed") or completed_count)
+                total_count = int(payload.get("total") or total_count)
+                discovered_count = int(payload.get("discovered") or 0)
+                await asyncio.to_thread(
+                    db.finish_scan,
+                    scan_id,
+                    status="completed",
+                    completed_count=completed_count,
+                    total_count=total_count,
+                    discovered_count=discovered_count,
+                )
+                terminal_status_written = True
+
+            yield f"data: {json.dumps(payload)}\n\n"
+    except asyncio.CancelledError:
+        await asyncio.to_thread(db.stop_scan_if_running, scan_id)
+        terminal_status_written = True
+        raise
+    except Exception as exc:
+        await asyncio.to_thread(
+            db.finish_scan,
+            scan_id,
+            status="failed",
+            completed_count=completed_count,
+            total_count=total_count,
+            discovered_count=discovered_count,
+            error=str(exc)[:500],
+        )
+        terminal_status_written = True
+        raise
+    finally:
+        if not terminal_status_written:
+            await asyncio.to_thread(db.stop_scan_if_running, scan_id)
+
+
+class RemediationUpdate(BaseModel):
+    status: str
+    assigned_owner: Optional[str] = Field(default=None, max_length=200)
+    analyst_comment: Optional[str] = Field(default=None, max_length=4000)
+
+
 @app.post("/scan")
 async def scan_endpoint(
     file: Optional[UploadFile] = File(None),
@@ -682,6 +1374,8 @@ async def scan_endpoint(
     use_enum: bool = False,
 ):
     if file is not None:
+        input_type = "excel"
+        input_value = file.filename or "Uploaded Excel file"
         try:
             content = await file.read()
             domains = parse_domains_from_excel(content)
@@ -690,21 +1384,160 @@ async def scan_endpoint(
         if not domains:
             raise HTTPException(status_code=400, detail="No valid domains found in Excel file")
     elif domain:
+        input_type = "domain"
         normalized = normalize_domain(domain)
         if not normalized:
             raise HTTPException(status_code=400, detail="Enter a valid domain, for example example.com")
         domains = [normalized]
+        input_value = normalized
         # A typed root domain is an enumeration request, even if a client omits
         # the UI's use_enum query parameter.
         use_enum = True
     else:
         raise HTTPException(status_code=400, detail="Upload an Excel file or enter a domain")
 
+    scan_id = await asyncio.to_thread(
+        db.create_scan,
+        input_type=input_type,
+        input_value=input_value,
+        source_domains=domains,
+        use_ai=use_ai,
+        use_enum=use_enum,
+    )
+
     return StreamingResponse(
-        stream_scan(domains, use_ai, use_enum),
+        persisted_stream_scan(scan_id, domains, use_ai, use_enum),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@app.get("/history/scans")
+async def history_scans(
+    q: str = "",
+    status: str = "",
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+):
+    if status and status not in {"running", "completed", "stopped", "failed"}:
+        raise HTTPException(status_code=400, detail="Invalid scan status")
+    return await asyncio.to_thread(
+        db.list_scans,
+        query=q,
+        status=status,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@app.get("/history/scans/{scan_id}")
+async def history_scan(scan_id: str):
+    scan = await asyncio.to_thread(db.get_scan, scan_id)
+    if not scan:
+        raise HTTPException(status_code=404, detail="Scan not found")
+    return scan
+
+
+@app.get("/history/scans/{scan_id}/results")
+async def history_scan_results(
+    scan_id: str,
+    q: str = "",
+    verdict: str = "",
+    severity: str = "",
+    remediation_status: str = "",
+    limit: int = Query(default=200, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0),
+):
+    if not await asyncio.to_thread(db.get_scan, scan_id):
+        raise HTTPException(status_code=404, detail="Scan not found")
+    return await asyncio.to_thread(
+        db.list_scan_results,
+        scan_id,
+        query=q,
+        verdict=verdict,
+        severity=severity,
+        remediation_status=remediation_status,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@app.get("/history/search")
+async def history_search(
+    q: str,
+    limit: int = Query(default=200, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0),
+):
+    if not q.strip():
+        raise HTTPException(status_code=400, detail="Enter a search term")
+    return await asyncio.to_thread(
+        db.search_results,
+        query=q,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@app.get("/history/results/{result_id}")
+async def history_result(result_id: int):
+    result = await asyncio.to_thread(db.get_result, result_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="Result not found")
+    return result
+
+
+@app.patch("/history/results/{result_id}")
+async def update_history_result(result_id: int, update: RemediationUpdate):
+    allowed_statuses = {"Open", "Investigating", "False Positive", "Resolved"}
+    if update.status not in allowed_statuses:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Status must be one of: {', '.join(sorted(allowed_statuses))}",
+        )
+    result = await asyncio.to_thread(
+        db.update_remediation,
+        result_id,
+        status=update.status,
+        assigned_owner=update.assigned_owner,
+        analyst_comment=update.analyst_comment,
+    )
+    if not result:
+        raise HTTPException(status_code=404, detail="Result not found")
+    return result
+
+
+@app.get("/database")
+async def database_json_view(
+    scan_limit: int = Query(default=100, ge=1, le=500),
+    result_limit: int = Query(default=500, ge=1, le=2000),
+):
+    """Read-only JSON view of stored scans and results for demonstrations."""
+    scans, results, database_status = await asyncio.gather(
+        asyncio.to_thread(db.list_scans, limit=scan_limit, offset=0),
+        asyncio.to_thread(db.search_results, query="", limit=result_limit, offset=0),
+        asyncio.to_thread(db.database_health),
+    )
+    return {
+        "database": {
+            "type": (
+                "PostgreSQL"
+                if database_status["backend"] == "postgresql"
+                else "SQLite"
+            ),
+            "name": database_status["database"],
+            "read_only": True,
+        },
+        "scans": {
+            "total": scans["total"],
+            "displayed": len(scans["items"]),
+            "rows": scans["items"],
+        },
+        "scan_results": {
+            "total": results["total"],
+            "displayed": len(results["items"]),
+            "rows": results["items"],
+        },
+    }
 
 
 @app.get("/health")
@@ -717,4 +1550,5 @@ async def health():
             "amass": bool(shutil.which("amass")),
             "subfinder": bool(shutil.which("subfinder")),
         },
+        "database": await asyncio.to_thread(db.database_health),
     }
